@@ -12,6 +12,7 @@ from depivot.utils import (
     extract_release_date,
     find_excel_files,
     generate_output_filename,
+    is_summary_row,
     parse_column_list,
 )
 from depivot.validators import (
@@ -390,6 +391,8 @@ def depivot_file(
     no_validate: bool = False,
     combine_sheets: bool = False,
     output_sheet_name: str = "Data",
+    exclude_totals: bool = False,
+    summary_patterns: Optional[List[str]] = None,
 ) -> Dict[str, int]:
     """Depivot a single Excel file with multi-sheet support.
 
@@ -457,7 +460,23 @@ def depivot_file(
             # Read sheet
             df = pd.read_excel(input_file, sheet_name=sheet_name, header=header_row)
 
-            # Store original for validation
+            # Filter out summary/total rows if requested
+            if exclude_totals and id_vars:
+                initial_row_count = len(df)
+                # Filter rows
+                mask = df.apply(
+                    lambda row: not is_summary_row(row.to_dict(), id_vars, summary_patterns),
+                    axis=1
+                )
+                df = df[mask].copy()
+                filtered_count = initial_row_count - len(df)
+
+                if filtered_count > 0 and verbose:
+                    console.print(
+                        f"    [yellow]Filtered {filtered_count} summary row(s) from {sheet_name}[/yellow]"
+                    )
+
+            # Store filtered data for validation
             sheets_data[sheet_name] = df.copy()
 
             # Validate columns exist in this sheet (skip if no id_vars)

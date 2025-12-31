@@ -30,6 +30,8 @@ ID | Name  | Month  | Value
 - Multi-worksheet support - process all sheets in a workbook
 - Batch processing - process multiple files at once
 - Column selection and filtering
+- Row filtering - exclude summary/total rows automatically
+- Configuration files - save and load parameter sets
 - Beautiful CLI with progress bars and colored output
 - Flexible output options
 
@@ -116,6 +118,25 @@ depivot [OPTIONS] INPUT_PATH [OUTPUT_PATH]
 - `--include-cols`: Only include these columns (comma-separated)
 - `--exclude-cols`, `-e`: Exclude these columns (comma-separated)
 - `--drop-na`: Drop rows with NA values after unpivoting
+
+### Row Filtering
+
+- `--exclude-totals`: Exclude summary/total rows (e.g., "Grand Total", "Subtotal")
+  - Automatically detects common summary row patterns
+  - Applied to ID columns
+- `--summary-patterns`: Custom patterns to identify summary rows (comma-separated)
+  - Example: `--summary-patterns "Total,Sum,Aggregate"`
+  - Case-insensitive matching
+
+### Configuration Files
+
+- `--config`, `-c`: Load parameters from YAML configuration file
+  - Example: `--config settings.yaml`
+  - CLI arguments override config file values
+- `--save-config`: Save current parameters to YAML configuration file
+  - Example: `--save-config settings.yaml`
+  - Can be used standalone without processing files
+  - Saves all transformation settings for reuse
 
 ### Batch Processing Options
 
@@ -211,6 +232,42 @@ depivot ./data/ --id-vars "ID" \
   --skip-sheets "Metadata"
 ```
 
+### Row Filtering
+
+```bash
+# Exclude summary rows automatically
+depivot data.xlsx --id-vars "Site,Category" \
+  --exclude-totals
+
+# Use custom summary patterns
+depivot data.xlsx --id-vars "Site,Category" \
+  --exclude-totals \
+  --summary-patterns "Total,Sum,Subtotal,Aggregate"
+```
+
+### Configuration Files
+
+```bash
+# Save commonly used parameters to a config file
+depivot test.xlsx output.xlsx \
+  --id-vars "Site,Category" \
+  --value-vars "Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec" \
+  --var-name "Month" \
+  --value-name "Amount" \
+  --header-row 2 \
+  --exclude-totals \
+  --save-config settings.yaml
+
+# Load parameters from config file
+depivot data.xlsx output.xlsx \
+  --config settings.yaml
+
+# Override specific parameters from config
+depivot data.xlsx output.xlsx \
+  --config settings.yaml \
+  --var-name "Period"  # Overrides var-name from config
+```
+
 ### Advanced Usage
 
 ```bash
@@ -256,6 +313,7 @@ depivot data.xlsx --id-vars "ID,Name" \
 - openpyxl >= 3.1.0
 - click >= 8.1.0
 - rich >= 13.0.0
+- pyyaml >= 6.0.0
 
 ## Project Structure
 
@@ -267,6 +325,7 @@ depivot/
 │       ├── __main__.py       # Enable python -m depivot
 │       ├── cli.py            # Click CLI interface
 │       ├── core.py           # Core depivoting logic
+│       ├── config.py         # Configuration file handling
 │       ├── validators.py     # Input validation
 │       ├── exceptions.py     # Custom exceptions
 │       └── utils.py          # Helper utilities

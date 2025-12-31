@@ -60,6 +60,7 @@ depivot/
 │   ├── __main__.py           # Enable 'python -m depivot'
 │   ├── cli.py                # Click CLI interface - entry point
 │   ├── core.py               # Core business logic
+│   ├── config.py             # Configuration file handling
 │   ├── validators.py         # Input validation functions
 │   ├── exceptions.py         # Custom exception hierarchy
 │   └── utils.py              # Helper utilities
@@ -92,6 +93,7 @@ depivot/
 - `pandas>=2.0.0` - Data manipulation using battle-tested `melt()` function
 - `openpyxl>=3.1.0` - Excel I/O (.xlsx support)
 - `rich>=13.0.0` - Beautiful terminal output, progress bars, colored text
+- `pyyaml>=6.0.0` - YAML configuration file support
 
 **Why pandas.melt()**:
 - Industry standard for unpivoting operations
@@ -235,6 +237,110 @@ def clean_numeric_value(value) -> float:
    - "Data" sheet: combined data (no SourceFile/SourceSheet - keeps it clean)
    - "Validation" sheet: validation with SourceFile for traceability
 
+### 7. Row Filtering
+
+**Purpose**: Automatically exclude summary/total rows (e.g., "Grand Total", "Subtotal") from processing to prevent data duplication and validation mismatches.
+
+**Implementation** (`utils.py:is_summary_row()`):
+```python
+def is_summary_row(row_data: dict, id_cols: List[str], summary_patterns: Optional[List[str]] = None) -> bool:
+    """Check if a row appears to be a summary/total row."""
+    if summary_patterns is None:
+        # Default summary patterns
+        summary_patterns = [
+            "grand total", "total", "subtotal", "sub-total",
+            "sub total", "sum", "summary"
+        ]
+
+    # Check each ID column for summary patterns
+    for col in id_cols:
+        if col in row_data:
+            value = str(row_data[col]).lower().strip()
+            for pattern in summary_patterns:
+                if pattern in value:
+                    return True
+    return False
+```
+
+**Usage in core.py**:
+```python
+# Filter out summary/total rows if requested
+if exclude_totals and id_vars:
+    initial_row_count = len(df)
+    mask = df.apply(
+        lambda row: not is_summary_row(row.to_dict(), id_vars, summary_patterns),
+        axis=1
+    )
+    df = df[mask].copy()
+    filtered_count = initial_row_count - len(df)
+
+    if filtered_count > 0 and verbose:
+        console.print(f"    [yellow]Filtered {filtered_count} summary row(s)[/yellow]")
+```
+
+**Key Points**:
+- Case-insensitive pattern matching
+- Checks all ID columns for summary indicators
+- Custom patterns supported via `--summary-patterns`
+- Validation data stored AFTER filtering to prevent mismatches
+
+### 8. Configuration File Support
+
+**Purpose**: Save commonly used parameter sets to avoid repetitive long command lines.
+
+**Format**: YAML (human-readable, supports comments)
+
+**Implementation** (`config.py`):
+```python
+def load_config(config_file: Path) -> Dict[str, Any]:
+    """Load configuration from YAML file."""
+    with open(config_file, "r") as f:
+        config = yaml.safe_load(f)
+    return config or {}
+
+def save_config(config_file: Path, config: Dict[str, Any]) -> None:
+    """Save configuration to YAML file."""
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(config_file, "w") as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+def get_config_params(options: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract saveable parameters (excludes runtime flags like verbose)."""
+    saveable_params = [
+        "id_vars", "value_vars", "var_name", "value_name",
+        "include_cols", "exclude_cols", "sheet_names", "skip_sheets",
+        "header_row", "drop_na", "index_col_name", "data_type_col",
+        "data_type_override", "forecast_start", "combine_sheets",
+        "output_sheet_name", "exclude_totals", "summary_patterns",
+    ]
+    # Convert lists to comma-separated strings for readability
+    # Return only non-None values
+```
+
+**CLI Integration**:
+- `--config <file>`: Load parameters from YAML file
+- `--save-config <file>`: Save current parameters to YAML file
+- CLI arguments override config file values
+- Can save config without processing files
+
+**Example Config File** (`intel_actuals.yaml`):
+```yaml
+id_vars: Site,Category
+value_vars: Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec
+var_name: Month
+value_name: Amount
+sheet_names: Workings - Actuals & Budgets
+header_row: 2
+drop_na: false
+index_col_name: Row
+data_type_col: DataType
+data_type_override: Actual
+forecast_start: March
+combine_sheets: false
+output_sheet_name: Data
+exclude_totals: true
+```
+
 ## Common Usage Patterns
 
 ### Process Single File with Actuals Section
@@ -249,6 +355,29 @@ depivot "W:\Intel Data\2025_02_All Sites.xlsx" \
   --data-type-override "Actual" \
   --sheet-names "Workings - Actuals & Budgets" \
   --header-row 2 \
+  --exclude-totals \
+  --verbose
+```
+
+### Save Configuration File for Repeated Use
+```bash
+# Save configuration for Actuals processing
+depivot test.xlsx output.xlsx \
+  --id-vars "Site,Category" \
+  --value-vars "Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec" \
+  --var-name "Month" \
+  --value-name "Amount" \
+  --forecast-start "March" \
+  --data-type-override "Actual" \
+  --sheet-names "Workings - Actuals & Budgets" \
+  --header-row 2 \
+  --exclude-totals \
+  --save-config "W:\Intel Data\intel_actuals.yaml"
+
+# Use saved configuration (much shorter command!)
+depivot "W:\Intel Data\2025_02_All Sites.xlsx" \
+  "W:\Intel Data\2025_02_Actuals.xlsx" \
+  --config "W:\Intel Data\intel_actuals.yaml" \
   --verbose
 ```
 
@@ -321,6 +450,21 @@ depivot "W:\Intel Data\2025_\*_All Sites EAC\*.xlsx" \
 - --output-sheet-name option
 - Better progress reporting
 
+### Phase 7: Row Filtering & Configuration Files
+- **Row filtering**: Automatically exclude summary/total rows
+  - `--exclude-totals` flag
+  - `--summary-patterns` for custom patterns
+  - Default patterns: "grand total", "total", "subtotal", "sum", "summary"
+  - is_summary_row() utility function
+  - Validation data stored after filtering to prevent mismatches
+- **Configuration file support**: Save and load parameter sets
+  - Added PyYAML dependency
+  - config.py module with load/save/get functions
+  - `--config` to load settings from YAML file
+  - `--save-config` to save current parameters
+  - CLI arguments override config values
+  - Standalone save mode (no file processing required)
+
 ## Important Notes for Future Developers
 
 ### Data Integrity
@@ -365,14 +509,16 @@ depivot "W:\Intel Data\2025_\*_All Sites EAC\*.xlsx" \
 
 ## Future Enhancements
 
+### Completed Improvements
+1. ✅ **Row filtering** - exclude summary rows like "Grand Total" automatically (Phase 7)
+2. ✅ **Configuration files** - save commonly used parameter sets (Phase 7)
+
 ### Potential Improvements
-1. **Row filtering** - exclude summary rows like "Grand Total" automatically
-2. **SQL Server direct upload** - integrate with sqlalchemy
-3. **Configuration files** - save commonly used parameter sets
-4. **Parallel processing** - process multiple files concurrently
-5. **Data quality rules** - flag anomalies (negative values where unexpected, etc.)
-6. **Excel template validation** - verify input files match expected structure
-7. **Incremental updates** - only process new/changed files
+1. **SQL Server direct upload** - integrate with sqlalchemy
+2. **Parallel processing** - process multiple files concurrently
+3. **Data quality rules** - flag anomalies (negative values where unexpected, etc.)
+4. **Excel template validation** - verify input files match expected structure
+5. **Incremental updates** - only process new/changed files
 
 ### Architecture Considerations
 - Consider adding a database layer (models.py)
