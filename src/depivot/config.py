@@ -56,6 +56,7 @@ def get_config_params(options: Dict[str, Any]) -> Dict[str, Any]:
 
     Note:
         Excludes runtime-specific parameters like verbose, overwrite, dry_run
+        Only saves non-default values to keep config files clean
     """
     # Parameters that make sense to save in config
     saveable_params = [
@@ -79,9 +80,30 @@ def get_config_params(options: Dict[str, Any]) -> Dict[str, Any]:
         "summary_patterns",
     ]
 
+    # Default values - don't save if value matches default
+    defaults = {
+        "var_name": "variable",
+        "value_name": "value",
+        "index_col_name": "Row",
+        "data_type_col": "DataType",
+        "output_sheet_name": "Data",
+        "header_row": 0,
+        "drop_na": False,
+        "combine_sheets": False,
+        "exclude_totals": False,
+    }
+
     config = {}
     for param in saveable_params:
         if param in options and options[param] is not None:
+            # Skip if value matches default
+            if param in defaults and options[param] == defaults[param]:
+                continue
+
+            # Skip empty lists
+            if isinstance(options[param], list) and len(options[param]) == 0:
+                continue
+
             # Convert lists to comma-separated strings for readability
             if isinstance(options[param], list):
                 config[param] = ",".join(str(v) for v in options[param])
