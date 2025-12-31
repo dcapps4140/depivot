@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(depivot:*)",
+      "Bash(git add:*)",
+      "Bash(git init:*)",
+      "Bash(git config --global --add safe.directory '%\\(prefix\\)///192.168.0.142/public/Projects/depivot')"
+    ]
+  }
+}
