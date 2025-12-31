@@ -28,22 +28,22 @@ console = Console()
 )
 @click.option(
     "--var-name",
-    default="variable",
+    default=None,
     help="Name for the variable column in output (default: 'variable')",
 )
 @click.option(
     "--value-name",
-    default="value",
+    default=None,
     help="Name for the value column in output (default: 'value')",
 )
 @click.option(
     "--index-name",
-    default="Row",
+    default=None,
     help="Name for auto-generated row index column when no --id-vars specified (default: 'Row')",
 )
 @click.option(
     "--data-type-col",
-    default="DataType",
+    default=None,
     help="Name for data type column (default: 'DataType'). Auto-detects Actual/Budget/Forecast from sheet names.",
 )
 @click.option(
@@ -70,7 +70,7 @@ console = Console()
 )
 @click.option(
     "--output-sheet-name",
-    default="Data",
+    default=None,
     help="Name for combined output sheet when using --combine-sheets (default: 'Data')",
 )
 @click.option(
