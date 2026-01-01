@@ -69,6 +69,46 @@ def find_excel_files(
     return sorted(directory.glob(pattern))
 
 
+def is_summary_row(row_data: dict, id_cols: List[str], summary_patterns: Optional[List[str]] = None) -> bool:
+    """Check if a row appears to be a summary/total row.
+
+    Args:
+        row_data: Dictionary of column values for the row
+        id_cols: List of ID column names to check
+        summary_patterns: Custom patterns to match (case-insensitive)
+
+    Returns:
+        True if row appears to be a summary row
+
+    Examples:
+        >>> is_summary_row({"Site": "Grand Total", "Category": "Labor"}, ["Site", "Category"])
+        True
+        >>> is_summary_row({"Site": "Austin", "Category": "Total"}, ["Site", "Category"])
+        True
+    """
+    if summary_patterns is None:
+        # Default summary patterns
+        summary_patterns = [
+            "grand total",
+            "total",
+            "subtotal",
+            "sub-total",
+            "sub total",
+            "sum",
+            "summary",
+        ]
+
+    # Check each ID column for summary patterns
+    for col in id_cols:
+        if col in row_data:
+            value = str(row_data[col]).lower().strip()
+            for pattern in summary_patterns:
+                if pattern in value:
+                    return True
+
+    return False
+
+
 def extract_release_date(filename: str) -> Optional[str]:
     """Extract release date from filename.
 

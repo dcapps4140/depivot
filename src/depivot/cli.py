@@ -5,6 +5,7 @@ from pathlib import Path
 import click
 from rich.console import Console
 
+from depivot.config import get_config_params, load_config, save_config as save_config_file
 from depivot.core import depivot_batch, depivot_file
 from depivot.exceptions import DepivotError
 from depivot.utils import generate_output_filename, parse_column_list
@@ -27,22 +28,22 @@ console = Console()
 )
 @click.option(
     "--var-name",
-    default="variable",
+    default=None,
     help="Name for the variable column in output (default: 'variable')",
 )
 @click.option(
     "--value-name",
-    default="value",
+    default=None,
     help="Name for the value column in output (default: 'value')",
 )
 @click.option(
     "--index-name",
-    default="Row",
+    default=None,
     help="Name for auto-generated row index column when no --id-vars specified (default: 'Row')",
 )
 @click.option(
     "--data-type-col",
-    default="DataType",
+    default=None,
     help="Name for data type column (default: 'DataType'). Auto-detects Actual/Budget/Forecast from sheet names.",
 )
 @click.option(
@@ -69,8 +70,28 @@ console = Console()
 )
 @click.option(
     "--output-sheet-name",
-    default="Data",
+    default=None,
     help="Name for combined output sheet when using --combine-sheets (default: 'Data')",
+)
+@click.option(
+    "--exclude-totals",
+    is_flag=True,
+    help="Exclude summary/total rows (e.g., 'Grand Total', 'Subtotal') from processing",
+)
+@click.option(
+    "--summary-patterns",
+    help="Custom comma-separated patterns to identify summary rows (e.g., 'Total,Sum,Subtotal')",
+)
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(path_type=Path),
+    help="Load parameters from YAML configuration file",
+)
+@click.option(
+    "--save-config",
+    type=click.Path(path_type=Path),
+    help="Save current parameters to YAML configuration file",
 )
 @click.option(
     "--pattern",
@@ -139,6 +160,40 @@ console = Console()
     is_flag=True,
     help="Preview what would be done without executing",
 )
+@click.option(
+    "--sql-only",
+    is_flag=True,
+    help="Only upload to SQL Server (skip Excel output)",
+)
+@click.option(
+    "--excel-only",
+    is_flag=True,
+    help="Only create Excel output (skip SQL upload) - default behavior",
+)
+@click.option(
+    "--both",
+    is_flag=True,
+    help="Create both Excel output and upload to SQL Server",
+)
+@click.option(
+    "--sql-connection-string",
+    help="SQL Server connection string",
+)
+@click.option(
+    "--sql-table",
+    help="Target SQL Server table name (e.g., '[dbo].[FY25_Budget_Actuals_DIBS]')",
+)
+@click.option(
+    "--sql-mode",
+    type=click.Choice(["append", "replace"], case_sensitive=False),
+    default="append",
+    help="SQL insert mode: 'append' (default) or 'replace' (truncate first)",
+)
+@click.option(
+    "--sql-l2-lookup-table",
+    default="[dbo].[Intel_Site_Names]",
+    help="Table name for L2_Proj lookup based on Site (default: '[dbo].[Intel_Site_Names]')",
+)
 @click.version_option(version="0.1.0", prog_name="depivot")
 def main(
     input_path,
@@ -155,6 +210,10 @@ def main(
     no_validate,
     combine_sheets,
     output_sheet_name,
+    exclude_totals,
+    summary_patterns,
+    config,
+    save_config,
     pattern,
     output_dir,
     exclude_cols,
@@ -168,6 +227,13 @@ def main(
     overwrite,
     verbose,
     dry_run,
+    sql_only,
+    excel_only,
+    both,
+    sql_connection_string,
+    sql_table,
+    sql_mode,
+    sql_l2_lookup_table,
 ):
     """Depivot Excel files from wide to long format.
 
@@ -195,15 +261,86 @@ def main(
         depivot ./data/ --id-vars "ID" --output-dir ./output/
     """
     try:
+        # Load configuration file if specified
+        config_params = {}
+        if config:
+            try:
+                config_params = load_config(Path(config))
+                if verbose:
+                    console.print(f"[cyan]Loaded configuration from: {config}[/cyan]")
+            except Exception as e:
+                raise DepivotError(f"Error loading config file {config}: {e}")
+
+        # If just saving config, skip path validation
+        if save_config and not config:
+            # Parse basic parameters for saving
+            id_vars_list = parse_column_list(id_vars) if id_vars else []
+            value_vars_list = parse_column_list(value_vars) if value_vars else None
+            include_cols_list = parse_column_list(include_cols) if include_cols else None
+            exclude_cols_list = parse_column_list(exclude_cols) if exclude_cols else None
+            summary_patterns_list = parse_column_list(summary_patterns) if summary_patterns else None
+
+            # Create options dict for saving
+            options = {
+                "id_vars": id_vars_list,
+                "value_vars": value_vars_list,
+                "var_name": var_name,
+                "value_name": value_name,
+                "include_cols": include_cols_list,
+                "exclude_cols": exclude_cols_list,
+                "sheet_names": sheet_names,
+                "skip_sheets": skip_sheets,
+                "header_row": header_row,
+                "drop_na": drop_na,
+                "index_col_name": index_name,
+                "data_type_col": data_type_col,
+                "data_type_override": data_type_override,
+                "forecast_start": forecast_start,
+                "combine_sheets": combine_sheets,
+                "output_sheet_name": output_sheet_name,
+                "exclude_totals": exclude_totals,
+                "summary_patterns": summary_patterns_list,
+            }
+
+            # Save and exit
+            try:
+                saveable_config = get_config_params(options)
+                save_config_file(Path(save_config), saveable_config)
+                console.print(f"[green]Configuration saved to: {save_config}[/green]")
+                return
+            except Exception as e:
+                raise DepivotError(f"Error saving config file {save_config}: {e}")
+
         # Convert string paths to Path objects
         input_path_str = input_path
         output_path_obj = Path(output_path) if output_path else None
 
-        # Parse column lists
-        id_vars_list = parse_column_list(id_vars) if id_vars else []
-        value_vars_list = parse_column_list(value_vars) if value_vars else None
-        include_cols_list = parse_column_list(include_cols) if include_cols else None
-        exclude_cols_list = parse_column_list(exclude_cols) if exclude_cols else None
+        # Parse column lists (CLI args override config)
+        id_vars_list = parse_column_list(id_vars) if id_vars else parse_column_list(config_params.get("id_vars")) if config_params.get("id_vars") else []
+        value_vars_list = parse_column_list(value_vars) if value_vars else parse_column_list(config_params.get("value_vars")) if config_params.get("value_vars") else None
+        include_cols_list = parse_column_list(include_cols) if include_cols else parse_column_list(config_params.get("include_cols")) if config_params.get("include_cols") else None
+        exclude_cols_list = parse_column_list(exclude_cols) if exclude_cols else parse_column_list(config_params.get("exclude_cols")) if config_params.get("exclude_cols") else None
+        summary_patterns_list = parse_column_list(summary_patterns) if summary_patterns else parse_column_list(config_params.get("summary_patterns")) if config_params.get("summary_patterns") else None
+
+        # Apply config defaults for other parameters (CLI overrides)
+        var_name = var_name or config_params.get("var_name", "variable")
+        value_name = value_name or config_params.get("value_name", "value")
+        index_name = index_name or config_params.get("index_col_name", "Row")
+        data_type_col = data_type_col or config_params.get("data_type_col", "DataType")
+        data_type_override = data_type_override or config_params.get("data_type_override")
+        forecast_start = forecast_start or config_params.get("forecast_start")
+        output_sheet_name = output_sheet_name or config_params.get("output_sheet_name", "Data")
+        sheet_names = sheet_names or config_params.get("sheet_names")
+        skip_sheets = skip_sheets or config_params.get("skip_sheets")
+        header_row = header_row if header_row != 0 else config_params.get("header_row", 0)
+
+        # Boolean flags from config (only if not set on CLI)
+        if not combine_sheets:
+            combine_sheets = config_params.get("combine_sheets", False)
+        if not exclude_totals:
+            exclude_totals = config_params.get("exclude_totals", False)
+        if not drop_na:
+            drop_na = config_params.get("drop_na", False)
 
         # Check for wildcard patterns in input path
         has_wildcards = '*' in input_path_str or '?' in input_path_str
@@ -228,6 +365,22 @@ def main(
             if not input_path_obj.exists():
                 raise DepivotError(f"Input path does not exist: {input_path_str}")
             matching_files = None
+
+        # Validate SQL parameters
+        flag_count = sum([sql_only, excel_only, both])
+        if flag_count > 1:
+            raise DepivotError("Only one of --sql-only, --excel-only, or --both can be specified")
+
+        # Determine output modes
+        sql_output = sql_only or both
+        excel_output = not sql_only  # Default True unless --sql-only
+
+        # Check required SQL parameters
+        if sql_output:
+            if not sql_connection_string:
+                raise DepivotError("--sql-connection-string is required when using --sql-only or --both")
+            if not sql_table:
+                raise DepivotError("--sql-table is required when using --sql-only or --both")
 
         # Determine if batch or single file processing
         is_batch = input_path_obj.is_dir() if not has_wildcards else False
@@ -277,7 +430,26 @@ def main(
             "no_validate": no_validate,
             "combine_sheets": combine_sheets,
             "output_sheet_name": output_sheet_name,
+            "exclude_totals": exclude_totals,
+            "summary_patterns": summary_patterns_list,
+            "sql_only": sql_only,
+            "excel_only": excel_only,
+            "both": both,
+            "sql_connection_string": sql_connection_string,
+            "sql_table": sql_table,
+            "sql_mode": sql_mode,
+            "sql_l2_lookup_table": sql_l2_lookup_table,
         }
+
+        # Save configuration if requested
+        if save_config:
+            try:
+                saveable_config = get_config_params(options)
+                save_config_file(Path(save_config), saveable_config)
+                console.print(f"[green]Configuration saved to: {save_config}[/green]")
+                return  # Exit after saving config
+            except Exception as e:
+                raise DepivotError(f"Error saving config file {save_config}: {e}")
 
         if is_batch:
             # Batch processing

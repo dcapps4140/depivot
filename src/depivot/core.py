@@ -12,6 +12,7 @@ from depivot.utils import (
     extract_release_date,
     find_excel_files,
     generate_output_filename,
+    is_summary_row,
     parse_column_list,
 )
 from depivot.validators import (
@@ -390,6 +391,15 @@ def depivot_file(
     no_validate: bool = False,
     combine_sheets: bool = False,
     output_sheet_name: str = "Data",
+    exclude_totals: bool = False,
+    summary_patterns: Optional[List[str]] = None,
+    sql_only: bool = False,
+    excel_only: bool = False,
+    both: bool = False,
+    sql_connection_string: Optional[str] = None,
+    sql_table: Optional[str] = None,
+    sql_mode: str = "append",
+    sql_l2_lookup_table: str = "[dbo].[Intel_Site_Names]",
 ) -> Dict[str, int]:
     """Depivot a single Excel file with multi-sheet support.
 
@@ -457,7 +467,23 @@ def depivot_file(
             # Read sheet
             df = pd.read_excel(input_file, sheet_name=sheet_name, header=header_row)
 
-            # Store original for validation
+            # Filter out summary/total rows if requested
+            if exclude_totals and id_vars:
+                initial_row_count = len(df)
+                # Filter rows
+                mask = df.apply(
+                    lambda row: not is_summary_row(row.to_dict(), id_vars, summary_patterns),
+                    axis=1
+                )
+                df = df[mask].copy()
+                filtered_count = initial_row_count - len(df)
+
+                if filtered_count > 0 and verbose:
+                    console.print(
+                        f"    [yellow]Filtered {filtered_count} summary row(s) from {sheet_name}[/yellow]"
+                    )
+
+            # Store filtered data for validation
             sheets_data[sheet_name] = df.copy()
 
             # Validate columns exist in this sheet (skip if no id_vars)
@@ -541,45 +567,104 @@ def depivot_file(
         elif verbose:
             console.print("[green]Validation: All totals match![/green]")
 
-    # Write all depivoted sheets to output file
-    try:
-        with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
-            # Write depivoted sheets
-            if combine_sheets:
-                # Combine all sheets into one DataFrame (without SourceSheet in data)
-                combined_dfs = []
-                for sheet_name, df_long in depivoted_sheets.items():
-                    combined_dfs.append(df_long)
+    # Determine output modes
+    excel_output = not sql_only
+    sql_output = sql_only or both
 
-                combined_df = pd.concat(combined_dfs, ignore_index=True)
-                combined_df.to_excel(writer, sheet_name=output_sheet_name, index=False)
+    # For SQL upload, always combine sheets into one DataFrame
+    if sql_output or combine_sheets:
+        combined_dfs = []
+        for sheet_name, df_long in depivoted_sheets.items():
+            combined_dfs.append(df_long)
+        combined_df = pd.concat(combined_dfs, ignore_index=True)
+    else:
+        combined_df = None
 
-                if verbose:
-                    console.print(
-                        f"[green]Combined {len(depivoted_sheets)} sheet(s) into '{output_sheet_name}'[/green]"
-                    )
-            else:
-                # Write each sheet separately
-                for sheet_name, df_long in depivoted_sheets.items():
-                    df_long.to_excel(writer, sheet_name=sheet_name, index=False)
+    # SQL Server upload
+    if sql_output:
+        from depivot.sql_upload import (
+            upload_to_sql_server,
+            transform_dataframe_for_sql,
+            fetch_l2_proj_mapping,
+        )
+        from depivot.exceptions import DatabaseError
 
-            # Write validation sheet if generated
-            if validation_df is not None:
-                validation_df.to_excel(writer, sheet_name="Validation", index=False)
+        try:
+            # Fetch L2_Proj mapping
+            if verbose:
+                console.print("[cyan]Fetching L2_Proj mapping from SQL Server...[/cyan]")
 
-        if verbose:
-            if combine_sheets:
-                sheet_count = 1  # Just the combined sheet
-            else:
-                sheet_count = len(depivoted_sheets)
-            if validation_df is not None:
-                sheet_count += 1
-            console.print(
-                f"[green]OK Wrote {sheet_count} sheet(s) to {output_file}[/green]"
+            l2_proj_mapping = fetch_l2_proj_mapping(
+                connection_string=sql_connection_string,
+                lookup_table=sql_l2_lookup_table,
             )
 
-    except Exception as e:
-        raise FileProcessingError(f"Error writing output file {output_file}: {e}")
+            if verbose:
+                console.print(f"[cyan]Fetched {len(l2_proj_mapping)} L2_Proj mappings[/cyan]")
+
+            # Transform data to SQL schema
+            if verbose:
+                console.print("[cyan]Transforming data for SQL Server...[/cyan]")
+
+            sql_df = transform_dataframe_for_sql(
+                df=combined_df,
+                l2_proj_mapping=l2_proj_mapping,
+                var_name=var_name,
+                value_name=value_name,
+                verbose=verbose,
+            )
+
+            # Upload to SQL Server
+            sql_stats = upload_to_sql_server(
+                df=sql_df,
+                connection_string=sql_connection_string,
+                table_name=sql_table,
+                mode=sql_mode,
+                verbose=verbose,
+            )
+
+            console.print(
+                f"[green]SQL: Uploaded {sql_stats['rows_uploaded']} rows to {sql_table} (mode: {sql_mode})[/green]"
+            )
+
+        except Exception as e:
+            console.print(f"[red]SQL Upload Error: {e}[/red]")
+            raise DatabaseError(f"SQL upload failed: {e}")
+
+    # Excel output (if requested)
+    if excel_output:
+        try:
+            with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
+                # Write depivoted sheets
+                if combine_sheets:
+                    combined_df.to_excel(writer, sheet_name=output_sheet_name, index=False)
+
+                    if verbose:
+                        console.print(
+                            f"[green]Combined {len(depivoted_sheets)} sheet(s) into '{output_sheet_name}'[/green]"
+                        )
+                else:
+                    # Write each sheet separately
+                    for sheet_name, df_long in depivoted_sheets.items():
+                        df_long.to_excel(writer, sheet_name=sheet_name, index=False)
+
+                # Write validation sheet if generated
+                if validation_df is not None:
+                    validation_df.to_excel(writer, sheet_name="Validation", index=False)
+
+            if verbose:
+                if combine_sheets:
+                    sheet_count = 1  # Just the combined sheet
+                else:
+                    sheet_count = len(depivoted_sheets)
+                if validation_df is not None:
+                    sheet_count += 1
+                console.print(
+                    f"[green]OK Wrote {sheet_count} sheet(s) to {output_file}[/green]"
+                )
+
+        except Exception as e:
+            raise FileProcessingError(f"Error writing output file {output_file}: {e}")
 
     return {
         "input_file": str(input_file),
@@ -756,22 +841,87 @@ def depivot_multi_file(
         elif verbose:
             console.print("[green]Validation: All totals match![/green]")
 
-    # Write output
-    try:
-        with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
-            combined_df.to_excel(writer, sheet_name=output_sheet_name, index=False)
+    # Determine output modes
+    sql_only = options.get("sql_only", False)
+    both = options.get("both", False)
+    excel_output = not sql_only
+    sql_output = sql_only or both
 
-            if validation_combined is not None:
-                validation_combined.to_excel(writer, sheet_name="Validation", index=False)
+    # SQL Server upload
+    if sql_output:
+        from depivot.sql_upload import (
+            upload_to_sql_server,
+            transform_dataframe_for_sql,
+            fetch_l2_proj_mapping,
+        )
+        from depivot.exceptions import DatabaseError
 
-        if verbose:
-            sheet_count = 1 + (1 if validation_combined is not None else 0)
-            console.print(
-                f"[green]OK Wrote {sheet_count} sheet(s) to {output_file}[/green]"
+        sql_connection_string = options.get("sql_connection_string")
+        sql_table = options.get("sql_table")
+        sql_mode = options.get("sql_mode", "append")
+        sql_l2_lookup_table = options.get("sql_l2_lookup_table", "[dbo].[Intel_Site_Names]")
+        var_name = options.get("var_name", "variable")
+        value_name = options.get("value_name", "value")
+
+        try:
+            # Fetch L2_Proj mapping
+            if verbose:
+                console.print("[cyan]Fetching L2_Proj mapping from SQL Server...[/cyan]")
+
+            l2_proj_mapping = fetch_l2_proj_mapping(
+                connection_string=sql_connection_string,
+                lookup_table=sql_l2_lookup_table,
             )
 
-    except Exception as e:
-        raise FileProcessingError(f"Error writing output file {output_file}: {e}")
+            if verbose:
+                console.print(f"[cyan]Fetched {len(l2_proj_mapping)} L2_Proj mappings[/cyan]")
+
+            # Transform data to SQL schema
+            if verbose:
+                console.print("[cyan]Transforming data for SQL Server...[/cyan]")
+
+            sql_df = transform_dataframe_for_sql(
+                df=combined_df,
+                l2_proj_mapping=l2_proj_mapping,
+                var_name=var_name,
+                value_name=value_name,
+                verbose=verbose,
+            )
+
+            # Upload to SQL Server
+            sql_stats = upload_to_sql_server(
+                df=sql_df,
+                connection_string=sql_connection_string,
+                table_name=sql_table,
+                mode=sql_mode,
+                verbose=verbose,
+            )
+
+            console.print(
+                f"[green]SQL: Uploaded {sql_stats['rows_uploaded']} rows to {sql_table} (mode: {sql_mode})[/green]"
+            )
+
+        except Exception as e:
+            console.print(f"[red]SQL Upload Error: {e}[/red]")
+            raise DatabaseError(f"SQL upload failed: {e}")
+
+    # Excel output (if requested)
+    if excel_output:
+        try:
+            with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
+                combined_df.to_excel(writer, sheet_name=output_sheet_name, index=False)
+
+                if validation_combined is not None:
+                    validation_combined.to_excel(writer, sheet_name="Validation", index=False)
+
+            if verbose:
+                sheet_count = 1 + (1 if validation_combined is not None else 0)
+                console.print(
+                    f"[green]OK Wrote {sheet_count} sheet(s) to {output_file}[/green]"
+                )
+
+        except Exception as e:
+            raise FileProcessingError(f"Error writing output file {output_file}: {e}")
 
     return {
         "input_files": [str(f) for f in input_files],
