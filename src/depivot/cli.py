@@ -342,6 +342,12 @@ def main(
         if not drop_na:
             drop_na = config_params.get("drop_na", False)
 
+        # SQL parameters from config (CLI overrides)
+        sql_connection_string = sql_connection_string or config_params.get("sql_connection_string")
+        sql_table = sql_table or config_params.get("sql_table")
+        sql_mode = sql_mode or config_params.get("sql_mode", "append")
+        sql_l2_lookup_table = sql_l2_lookup_table or config_params.get("sql_l2_lookup_table", "[dbo].[Intel_Site_Names]")
+
         # Check for wildcard patterns in input path
         has_wildcards = '*' in input_path_str or '?' in input_path_str
 
