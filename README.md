@@ -32,6 +32,7 @@ ID | Name  | Month  | Value
 - Column selection and filtering
 - Row filtering - exclude summary/total rows automatically
 - Configuration files - save and load parameter sets
+- **SQL Server upload** - upload depivoted data directly to SQL Server
 - Beautiful CLI with progress bars and colored output
 - Flexible output options
 
@@ -151,6 +152,18 @@ depivot [OPTIONS] INPUT_PATH [OUTPUT_PATH]
 
 - `--recursive`, `-r`: Recursively search subdirectories
 
+### SQL Server Upload Options
+
+- `--sql-only`: Upload to SQL Server only (skip Excel file creation)
+- `--excel-only`: Create Excel file only (default behavior)
+- `--both`: Create both Excel file AND upload to SQL Server
+- `--sql-connection-string`: SQL Server connection string
+  - Example: `"Driver={ODBC Driver 18 for SQL Server};Server=SERVER;Database=DB;UID=user;PWD=pass;"`
+- `--sql-table`: Target SQL Server table name
+  - Example: `"[dbo].[Budget_Actuals]"`
+- `--sql-mode`: Insert mode - `append` (default) or `replace` (truncate first)
+- `--sql-l2-lookup-table`: Lookup table for L2_Proj mapping (default: `[dbo].[Intel_Site_Names]`)
+
 ### General Options
 
 - `--overwrite`: Overwrite existing output files
@@ -268,6 +281,89 @@ depivot data.xlsx output.xlsx \
   --var-name "Period"  # Overrides var-name from config
 ```
 
+### SQL Server Upload
+
+Upload depivoted data directly to SQL Server with automatic data transformation:
+
+**Output Modes:**
+- `--sql-only`: Upload to SQL Server only (skip Excel file creation)
+- `--excel-only`: Create Excel file only (default behavior)
+- `--both`: Create both Excel file AND upload to SQL Server
+
+**SQL Options:**
+- `--sql-connection-string`: SQL Server connection string
+- `--sql-table`: Target table name (e.g., `[dbo].[TableName]`)
+- `--sql-mode`: Insert mode - `append` (default) or `replace` (truncate first)
+- `--sql-l2-lookup-table`: Lookup table for L2_Proj mapping (default: `[dbo].[Intel_Site_Names]`)
+
+**Data Transformations:**
+The SQL upload automatically transforms data to match the SQL Server schema:
+- Month names (Jan, Feb, Mar) → Period numbers (1, 2, 3, ..., 12)
+- ReleaseDate (YYYY-MM) → FiscalYear (extract year as integer)
+- Site → L2_Proj (lookup from Intel_Site_Names table)
+- DataType → Status column
+- Actuals/Forecast classification based on `--forecast-start` parameter
+
+```bash
+# Upload to SQL Server only (no Excel file)
+depivot data.xlsx dummy.xlsx \
+  --id-vars "Site,Category" \
+  --value-vars "Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec" \
+  --var-name "Month" \
+  --value-name "Amount" \
+  --sql-only \
+  --sql-connection-string "Driver={ODBC Driver 18 for SQL Server};Server=SERVER;Database=DB;UID=user;PWD=pass;" \
+  --sql-table "[dbo].[Budget_Actuals]"
+
+# Create both Excel and upload to SQL
+depivot data.xlsx output.xlsx \
+  --config settings.yaml \
+  --both \
+  --sql-connection-string "Driver={...};" \
+  --sql-table "[dbo].[Budget_Actuals]" \
+  --sql-mode append
+
+# Replace existing data in SQL table
+depivot data.xlsx output.xlsx \
+  --config settings.yaml \
+  --both \
+  --sql-connection-string "Driver={...};" \
+  --sql-table "[dbo].[Budget_Actuals]" \
+  --sql-mode replace
+
+# Save SQL settings in config file for reuse
+depivot test.xlsx output.xlsx \
+  --id-vars "Site,Category" \
+  --var-name "Month" \
+  --value-name "Amount" \
+  --sql-connection-string "Driver={...};" \
+  --sql-table "[dbo].[Budget_Actuals]" \
+  --sql-mode append \
+  --save-config sql_config.yaml
+
+# Load SQL settings from config
+depivot data.xlsx output.xlsx \
+  --config sql_config.yaml \
+  --both
+```
+
+**SQL Server Schema Requirements:**
+
+The target SQL table should have the following columns:
+- `L2_Proj` (varchar) - Mapped from lookup table
+- `Site` (varchar) - Direct from source data
+- `Category` (varchar) - Direct from source data
+- `FiscalYear` (int) - Extracted from ReleaseDate
+- `Period` (int) - Converted from month name (1-12)
+- `Actuals` (float) - Value column
+- `Status` (varchar) - DataType (Actual/Budget/Forecast)
+
+**Prerequisites:**
+- Install ODBC Driver 18 for SQL Server
+- Install pyodbc: `pip install pyodbc>=5.0.0`
+- Ensure network access to SQL Server
+- Create lookup table `[dbo].[Intel_Site_Names]` with `[Site Name]` and `[L2_Proj]` columns
+
 ### Advanced Usage
 
 ```bash
@@ -314,6 +410,7 @@ depivot data.xlsx --id-vars "ID,Name" \
 - click >= 8.1.0
 - rich >= 13.0.0
 - pyyaml >= 6.0.0
+- pyodbc >= 5.0.0 (for SQL Server upload)
 
 ## Project Structure
 
@@ -326,6 +423,7 @@ depivot/
 │       ├── cli.py            # Click CLI interface
 │       ├── core.py           # Core depivoting logic
 │       ├── config.py         # Configuration file handling
+│       ├── sql_upload.py     # SQL Server upload functionality
 │       ├── validators.py     # Input validation
 │       ├── exceptions.py     # Custom exceptions
 │       └── utils.py          # Helper utilities

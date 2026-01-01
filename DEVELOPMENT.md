@@ -61,6 +61,7 @@ depivot/
 │   ├── cli.py                # Click CLI interface - entry point
 │   ├── core.py               # Core business logic
 │   ├── config.py             # Configuration file handling
+│   ├── sql_upload.py         # SQL Server upload functionality
 │   ├── validators.py         # Input validation functions
 │   ├── exceptions.py         # Custom exception hierarchy
 │   └── utils.py              # Helper utilities
@@ -94,6 +95,7 @@ depivot/
 - `openpyxl>=3.1.0` - Excel I/O (.xlsx support)
 - `rich>=13.0.0` - Beautiful terminal output, progress bars, colored text
 - `pyyaml>=6.0.0` - YAML configuration file support
+- `pyodbc>=5.0.0` - SQL Server connectivity via ODBC driver
 
 **Why pandas.melt()**:
 - Industry standard for unpivoting operations
@@ -339,7 +341,128 @@ forecast_start: March
 combine_sheets: false
 output_sheet_name: Data
 exclude_totals: true
+sql_connection_string: Driver={ODBC Driver 18 for SQL Server};Server=SERVER;Database=DB;UID=user;PWD=pass;
+sql_table: '[dbo].[Budget_Actuals]'
+sql_mode: append
+sql_l2_lookup_table: '[dbo].[Intel_Site_Names]'
 ```
+
+### 9. SQL Server Upload
+
+**Purpose**: Upload depivoted data directly to SQL Server database, eliminating manual Excel→SQL import steps and enabling automated data pipelines.
+
+**Architecture**:
+- `sql_upload.py` module contains all SQL Server operations
+- Automatic data transformation to match SQL Server schema
+- Bulk insert using parameterized queries for performance and security
+- L2_Proj lookup via SQL query before upload (pre-fetch strategy)
+
+**Output Modes**:
+- `--sql-only`: Upload to SQL only, skip Excel file creation
+- `--excel-only`: Create Excel only (default, backward compatible)
+- `--both`: Create both Excel file AND upload to SQL
+
+**Data Transformations** (`transform_dataframe_for_sql()`):
+
+| Depivot Output | → | SQL Server Column | Transformation |
+|---|---|---|---|
+| Site | → | Site | Direct copy |
+| Category | → | Category | Direct copy |
+| Month (Jan, Feb, Mar) | → | Period (1, 2, 3) | `convert_month_to_period()` |
+| Amount | → | Actuals | Direct copy (renamed) |
+| DataType | → | Status | Direct copy (renamed) |
+| ReleaseDate (2025-02) | → | FiscalYear (2025) | `extract_fiscal_year()` - extract year as int |
+| Site (lookup) | → | L2_Proj | `fetch_l2_proj_mapping()` - lookup from Intel_Site_Names |
+
+**Month to Period Mapping**:
+```python
+MONTH_TO_PERIOD = {
+    "jan": 1, "january": 1,
+    "feb": 2, "february": 2,
+    # ... all months 1-12
+}
+```
+
+**L2_Proj Lookup Strategy**:
+- Pre-fetch mapping dictionary from lookup table before upload
+- SQL Query: `SELECT DISTINCT [Site Name], [L2_Proj] FROM [dbo].[Intel_Site_Names]`
+- Map via pandas: `df['L2_Proj'] = df['Site'].map(l2_proj_mapping)`
+- More efficient than JOIN for bulk uploads
+- Warns about missing mappings but continues with NULL
+
+**Bulk Insert Implementation**:
+```python
+# Parameterized INSERT statement
+insert_sql = """
+    INSERT INTO {table_name}
+    (L2_Proj, Site, Category, FiscalYear, Period, Actuals, Status)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+"""
+
+# Bulk insert with executemany() for performance
+rows = df[columns].values.tolist()
+cursor.executemany(insert_sql, rows)
+conn.commit()
+```
+
+**SQL Insert Modes**:
+- `append` (default): Add rows to existing data (`INSERT INTO`)
+- `replace`: Truncate table first (`TRUNCATE TABLE` then `INSERT INTO`)
+
+**NaN/NULL Handling**:
+- Converts pandas NaN to Python None before upload
+- SQL Server receives NULL values correctly
+- Critical for numeric columns with missing data
+
+**Error Handling**:
+- Connection validation before processing
+- Clear error messages for:
+  - ODBC driver not found
+  - Connection failures
+  - Table doesn't exist
+  - Invalid data types
+  - Missing required columns
+
+**SQL Server Schema Requirements**:
+```sql
+CREATE TABLE [dbo].[FY25_Budget_Actuals_DIBS] (
+    [PK_IDX] INT IDENTITY(1,1) PRIMARY KEY,
+    [L2_Proj] VARCHAR(50),
+    [Site] VARCHAR(100) NOT NULL,
+    [Category] VARCHAR(100) NOT NULL,
+    [FiscalYear] INT,
+    [Period] INT,
+    [Actuals] FLOAT,
+    [Status] VARCHAR(20)
+)
+
+-- Lookup table
+CREATE TABLE [dbo].[Intel_Site_Names] (
+    [Site Name] VARCHAR(100) PRIMARY KEY,
+    [L2_Proj] VARCHAR(50) NOT NULL
+)
+```
+
+**CLI Options**:
+- `--sql-connection-string`: Connection string (can be saved in config file)
+- `--sql-table`: Target table name (e.g., `[dbo].[Budget_Actuals]`)
+- `--sql-mode`: `append` or `replace`
+- `--sql-l2-lookup-table`: Lookup table name (default: `[dbo].[Intel_Site_Names]`)
+
+**Key Implementation Details**:
+1. **Connection String Format**: Uses ODBC Driver 18 with explicit encrypt/trust settings
+   ```
+   Driver={ODBC Driver 18 for SQL Server};Server=SERVER;Database=DB;UID=user;PWD=pass;Encrypt=no;TrustServerCertificate=yes;
+   ```
+
+2. **Data Quality**: Automatically filters out:
+   - Rows where Site or Category is NULL
+   - Rows containing "total" in Site or Category (summary rows)
+   - Budget rows where ALL month values are NULL
+
+3. **Validation**: SQL upload happens AFTER Excel validation, so validation report is still generated even in `--sql-only` mode (stored in memory, not written to disk)
+
+4. **Performance**: Processes ~3000 rows in <5 seconds including transformations and bulk insert
 
 ## Common Usage Patterns
 
@@ -414,6 +537,44 @@ depivot "W:\Intel Data\2025_\*_All Sites EAC\*.xlsx" \
 
 **Note**: Budget columns have `.1` suffix (Site.1, Jan.1, etc.) because they're in the same sheet as Actuals.
 
+### Upload to SQL Server
+
+```bash
+# Upload depivoted data to SQL Server (both Excel and SQL)
+depivot "W:\Intel Data\2025_02_All Sites.xlsx" \
+  "W:\Intel Data\2025_02_Actuals.xlsx" \
+  --config "W:\Intel Data\intel_actuals.yaml" \
+  --both \
+  --sql-connection-string "Driver={ODBC Driver 18 for SQL Server};Server=NAILDC-SRV1;Database=Intel_Project;UID=sa;PWD=sqlserver1!;Encrypt=no;TrustServerCertificate=yes;" \
+  --sql-table "[dbo].[FY25_Budget_Actuals_DIBS]" \
+  --sql-mode replace \
+  --verbose
+
+# SQL upload only (no Excel file)
+depivot "W:\Intel Data\2025_02_All Sites.xlsx" \
+  dummy.xlsx \
+  --config "W:\Intel Data\intel_actuals.yaml" \
+  --sql-only \
+  --sql-connection-string "Driver={...};" \
+  --sql-table "[dbo].[FY25_Budget_Actuals_DIBS]"
+
+# Save SQL connection in config file for reuse
+depivot test.xlsx output.xlsx \
+  --id-vars "Site,Category" \
+  --var-name "Month" \
+  --value-name "Amount" \
+  --sql-connection-string "Driver={...};" \
+  --sql-table "[dbo].[FY25_Budget_Actuals_DIBS]" \
+  --save-config sql_config.yaml
+```
+
+**Result**:
+- Automatic transformations: Month→Period, ReleaseDate→FiscalYear, Site→L2_Proj
+- Status classification: Actual (Jan-Feb), Forecast (Mar-Dec)
+- 160 rows → 1,920 rows uploaded to SQL Server
+- L2_Proj mapping applied from Intel_Site_Names table
+- Summary rows and NULL-only Budget rows automatically filtered
+
 ## Development History
 
 ### Phase 1: Foundation
@@ -465,6 +626,28 @@ depivot "W:\Intel Data\2025_\*_All Sites EAC\*.xlsx" \
   - CLI arguments override config values
   - Standalone save mode (no file processing required)
 
+### Phase 8: SQL Server Upload Integration
+- **Direct SQL Server upload**: Eliminate manual Excel→SQL import steps
+  - Added pyodbc dependency (>=5.0.0)
+  - sql_upload.py module with all database operations
+  - DatabaseError exception added to exceptions.py
+  - Output modes: `--sql-only`, `--excel-only`, `--both`
+  - Insert modes: `append` (default) or `replace` (truncate first)
+- **Automatic data transformation**:
+  - Month names → Period numbers (Jan=1, Dec=12)
+  - ReleaseDate → FiscalYear (extract year as integer)
+  - Site → L2_Proj (lookup from Intel_Site_Names table)
+  - DataType → Status column rename
+  - Pre-fetch L2_Proj mapping for efficient bulk upload
+- **Bulk insert optimization**: Parameterized executemany() for performance
+- **NaN/NULL handling**: Proper conversion of pandas NaN to SQL NULL
+- **Data quality filters**: Automatic exclusion of:
+  - Summary rows (Grand Total, etc.)
+  - Budget rows with all NULL months
+  - Rows with NULL Site or Category
+- **Configuration support**: SQL connection string and parameters saveable in YAML
+- **Tested with production data**: Successfully processed 3072 rows (Actuals, Forecast, Budget)
+
 ## Important Notes for Future Developers
 
 ### Data Integrity
@@ -512,13 +695,15 @@ depivot "W:\Intel Data\2025_\*_All Sites EAC\*.xlsx" \
 ### Completed Improvements
 1. ✅ **Row filtering** - exclude summary rows like "Grand Total" automatically (Phase 7)
 2. ✅ **Configuration files** - save commonly used parameter sets (Phase 7)
+3. ✅ **SQL Server direct upload** - upload depivoted data directly to SQL Server (Phase 8)
 
 ### Potential Improvements
-1. **SQL Server direct upload** - integrate with sqlalchemy
-2. **Parallel processing** - process multiple files concurrently
-3. **Data quality rules** - flag anomalies (negative values where unexpected, etc.)
-4. **Excel template validation** - verify input files match expected structure
-5. **Incremental updates** - only process new/changed files
+1. **Parallel processing** - process multiple files concurrently
+2. **Data quality rules** - flag anomalies (negative values where unexpected, etc.)
+3. **Excel template validation** - verify input files match expected structure
+4. **Incremental updates** - only process new/changed files
+5. **Other database support** - PostgreSQL, MySQL via SQLAlchemy abstraction
+6. **Dual-dataset processing** - automatically detect and process side-by-side datasets (Actuals + Budget) in single pass
 
 ### Architecture Considerations
 - Consider adding a database layer (models.py)

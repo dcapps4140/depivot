@@ -29,3 +29,9 @@ class SheetError(DepivotError):
     """Error with sheet specification or processing."""
 
     pass
+
+
+class DatabaseError(DepivotError):
+    """Error with database operations."""
+
+    pass

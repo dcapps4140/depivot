@@ -160,6 +160,40 @@ console = Console()
     is_flag=True,
     help="Preview what would be done without executing",
 )
+@click.option(
+    "--sql-only",
+    is_flag=True,
+    help="Only upload to SQL Server (skip Excel output)",
+)
+@click.option(
+    "--excel-only",
+    is_flag=True,
+    help="Only create Excel output (skip SQL upload) - default behavior",
+)
+@click.option(
+    "--both",
+    is_flag=True,
+    help="Create both Excel output and upload to SQL Server",
+)
+@click.option(
+    "--sql-connection-string",
+    help="SQL Server connection string",
+)
+@click.option(
+    "--sql-table",
+    help="Target SQL Server table name (e.g., '[dbo].[FY25_Budget_Actuals_DIBS]')",
+)
+@click.option(
+    "--sql-mode",
+    type=click.Choice(["append", "replace"], case_sensitive=False),
+    default="append",
+    help="SQL insert mode: 'append' (default) or 'replace' (truncate first)",
+)
+@click.option(
+    "--sql-l2-lookup-table",
+    default="[dbo].[Intel_Site_Names]",
+    help="Table name for L2_Proj lookup based on Site (default: '[dbo].[Intel_Site_Names]')",
+)
 @click.version_option(version="0.1.0", prog_name="depivot")
 def main(
     input_path,
@@ -193,6 +227,13 @@ def main(
     overwrite,
     verbose,
     dry_run,
+    sql_only,
+    excel_only,
+    both,
+    sql_connection_string,
+    sql_table,
+    sql_mode,
+    sql_l2_lookup_table,
 ):
     """Depivot Excel files from wide to long format.
 
@@ -325,6 +366,22 @@ def main(
                 raise DepivotError(f"Input path does not exist: {input_path_str}")
             matching_files = None
 
+        # Validate SQL parameters
+        flag_count = sum([sql_only, excel_only, both])
+        if flag_count > 1:
+            raise DepivotError("Only one of --sql-only, --excel-only, or --both can be specified")
+
+        # Determine output modes
+        sql_output = sql_only or both
+        excel_output = not sql_only  # Default True unless --sql-only
+
+        # Check required SQL parameters
+        if sql_output:
+            if not sql_connection_string:
+                raise DepivotError("--sql-connection-string is required when using --sql-only or --both")
+            if not sql_table:
+                raise DepivotError("--sql-table is required when using --sql-only or --both")
+
         # Determine if batch or single file processing
         is_batch = input_path_obj.is_dir() if not has_wildcards else False
 
@@ -375,6 +432,13 @@ def main(
             "output_sheet_name": output_sheet_name,
             "exclude_totals": exclude_totals,
             "summary_patterns": summary_patterns_list,
+            "sql_only": sql_only,
+            "excel_only": excel_only,
+            "both": both,
+            "sql_connection_string": sql_connection_string,
+            "sql_table": sql_table,
+            "sql_mode": sql_mode,
+            "sql_l2_lookup_table": sql_l2_lookup_table,
         }
 
         # Save configuration if requested

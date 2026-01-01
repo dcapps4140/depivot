@@ -78,6 +78,10 @@ def get_config_params(options: Dict[str, Any]) -> Dict[str, Any]:
         "output_sheet_name",
         "exclude_totals",
         "summary_patterns",
+        "sql_connection_string",
+        "sql_table",
+        "sql_mode",
+        "sql_l2_lookup_table",
     ]
 
     # Default values - don't save if value matches default
@@ -91,6 +95,8 @@ def get_config_params(options: Dict[str, Any]) -> Dict[str, Any]:
         "drop_na": False,
         "combine_sheets": False,
         "exclude_totals": False,
+        "sql_mode": "append",
+        "sql_l2_lookup_table": "[dbo].[Intel_Site_Names]",
     }
 
     config = {}
