@@ -33,6 +33,8 @@ ID | Name  | Month  | Value
 - Row filtering - exclude summary/total rows automatically
 - Configuration files - save and load parameter sets
 - **SQL Server upload** - upload depivoted data directly to SQL Server
+- **Template validation** - verify Excel file structure before processing
+- **Data quality validation** - comprehensive pre/post-processing data checks
 - Beautiful CLI with progress bars and colored output
 - Flexible output options
 
@@ -163,6 +165,12 @@ depivot [OPTIONS] INPUT_PATH [OUTPUT_PATH]
   - Example: `"[dbo].[Budget_Actuals]"`
 - `--sql-mode`: Insert mode - `append` (default) or `replace` (truncate first)
 - `--sql-l2-lookup-table`: Lookup table for L2_Proj mapping (default: `[dbo].[Intel_Site_Names]`)
+
+### Validation Options
+
+- `--no-quality-validation`: Skip data quality validation (validation runs by default if configured in YAML)
+  - Template validation still runs if configured
+  - Use when you need faster processing and trust data quality
 
 ### General Options
 
@@ -364,6 +372,178 @@ The target SQL table should have the following columns:
 - Ensure network access to SQL Server
 - Create lookup table `[dbo].[Intel_Site_Names]` with `[Site Name]` and `[L2_Proj]` columns
 
+### Data Quality and Template Validation
+
+The depivot tool includes two complementary validation systems to ensure data integrity and Excel file structure compliance:
+
+#### Template Validation
+
+Validates Excel file structure, sheet names, headers, and formats **before** data processing using a three-phase approach:
+
+**Phase 1 - File Structure** (~50-100ms):
+- Verify required sheets exist
+- Validate sheet count within expected range
+
+**Phase 2 - Sheet Template** (~20-50ms per sheet):
+- Check header row content and position
+- Detect problematic merged cells
+- Validate cell formats (numeric columns)
+
+**Phase 3 - DataFrame** (~10-20ms per sheet):
+- Ensure required columns present
+- Validate column ordering
+
+**Configuration Example:**
+
+```yaml
+# config.yaml
+template_validation:
+  enabled: true
+
+  file_structure:
+    - check: expected_sheets
+      enabled: true
+      severity: error
+      params:
+        required_sheets: ["Workings - Actuals & Budgets"]
+        allow_extra_sheets: true
+      message: "Required sheet not found"
+
+  sheet_template:
+    - check: header_row
+      enabled: true
+      severity: error
+      params:
+        row_number: 3  # 1-indexed (Excel row 3)
+        expected_columns: ["Site", "Category", "Jan", "Feb", "Mar"]
+        exact_order: false
+        allow_extra_columns: true
+      message: "Header row mismatch in sheet '{sheet}'"
+
+    - check: merged_cells
+      enabled: true
+      severity: warning
+      params:
+        allowed: false
+      message: "Merged cells detected in '{sheet}': {ranges}"
+
+  dataframe_template:
+    - check: required_columns
+      enabled: true
+      severity: error
+      params:
+        columns: ["Site", "Category"]
+      message: "Required columns missing in '{sheet}': {missing}"
+
+  settings:
+    stop_on_error: true
+    verbose: false
+```
+
+#### Data Quality Validation
+
+Validates data integrity before and after depivoting with 10 configurable rules:
+
+**Pre-Processing Rules** (run before depivoting):
+1. **check_null_values** - Detect excessive NULL/missing values
+2. **check_duplicates** - Find duplicate rows
+3. **check_column_types** - Validate expected data types
+4. **check_value_ranges** - Check values within min/max ranges
+5. **check_required_columns** - Ensure required columns exist and non-empty
+
+**Post-Processing Rules** (run after depivoting):
+1. **check_row_count** - Validate row count matches expectations
+2. **check_numeric_conversion** - Track NULL values in depivoted data
+3. **check_outliers** - Detect statistical outliers (z-score or IQR)
+4. **check_data_completeness** - Find missing dimension combinations
+5. **check_totals_match** - Verify totals match between source and processed data
+
+**Configuration Example:**
+
+```yaml
+# config.yaml
+validation_rules:
+  enabled: true
+
+  pre_processing:
+    - rule: check_null_values
+      enabled: true
+      severity: warning
+      params:
+        columns: ["Site", "Category"]
+        threshold: 0.05  # Allow up to 5% NULLs
+      message: "Excessive NULL values in {column}: {percent}%"
+
+    - rule: check_duplicates
+      enabled: true
+      severity: error
+      params:
+        key_columns: ["Site", "Category"]
+      message: "Duplicate rows detected: {count} duplicates found"
+
+    - rule: check_required_columns
+      enabled: true
+      severity: error
+      params:
+        columns: ["Site", "Category"]
+        allow_all_null: false
+      message: "Required column {column} missing or empty"
+
+  post_processing:
+    - rule: check_row_count
+      enabled: true
+      severity: error
+      params:
+        min_ratio: 0.95  # At least 95% of expected rows
+        max_ratio: 1.05  # At most 105% of expected rows
+      message: "Row count mismatch: expected {expected}, got {actual}"
+
+    - rule: check_totals_match
+      enabled: true
+      severity: error
+      params:
+        tolerance: 0.01  # Absolute difference tolerance
+      message: "Totals mismatch: source={source_total}, processed={processed_total}"
+
+  validation_settings:
+    stop_on_error: true
+    max_warnings_display: 20
+    verbose_rules: false
+```
+
+**Using Validation:**
+
+```bash
+# Run with validation configured in YAML
+depivot data.xlsx output.xlsx --config config.yaml --verbose
+
+# Disable data quality validation (template validation still runs)
+depivot data.xlsx output.xlsx --config config.yaml --no-quality-validation
+
+# Validation output shows results for each phase
+# Validating template structure...
+# Data Quality - PRE-Sheet1 Results:
+#   Passed: 3
+#   Warnings: 0
+#   Errors: 0
+# Data Quality - POST-Sheet1 Results:
+#   Passed: 4
+#   Warnings: 0
+#   Errors: 0
+```
+
+**Severity Levels:**
+- `error`: Stop processing immediately
+- `warning`: Log warning but continue
+- `info`: Informational only
+
+**Performance Impact:**
+- Template validation: <200ms overhead per file
+- Data quality validation: <100ms overhead per sheet
+- Both systems add minimal processing time while ensuring data integrity
+
+For detailed validation configuration, see `W:\Intel Data\DATA_QUALITY_VALIDATION_GUIDE.md`.
+
 ### Advanced Usage
 
 ```bash
@@ -418,19 +598,22 @@ depivot data.xlsx --id-vars "ID,Name" \
 depivot/
 ├── src/
 │   └── depivot/
-│       ├── __init__.py       # Package initialization
-│       ├── __main__.py       # Enable python -m depivot
-│       ├── cli.py            # Click CLI interface
-│       ├── core.py           # Core depivoting logic
-│       ├── config.py         # Configuration file handling
-│       ├── sql_upload.py     # SQL Server upload functionality
-│       ├── validators.py     # Input validation
-│       ├── exceptions.py     # Custom exceptions
-│       └── utils.py          # Helper utilities
-├── examples/                 # Example files
-├── pyproject.toml           # Project configuration
-├── requirements.txt         # Dependencies
-└── README.md               # This file
+│       ├── __init__.py            # Package initialization
+│       ├── __main__.py            # Enable python -m depivot
+│       ├── cli.py                 # Click CLI interface
+│       ├── core.py                # Core depivoting logic
+│       ├── config.py              # Configuration file handling
+│       ├── sql_upload.py          # SQL Server upload functionality
+│       ├── data_quality.py        # Data quality validation engine
+│       ├── quality_rules.py       # 10 data quality validation rules
+│       ├── template_validators.py # Excel template validation
+│       ├── validators.py          # Input validation
+│       ├── exceptions.py          # Custom exceptions
+│       └── utils.py               # Helper utilities
+├── examples/                      # Example files
+├── pyproject.toml                # Project configuration
+├── requirements.txt              # Dependencies
+└── README.md                     # This file
 ```
 
 ## Development
@@ -456,8 +639,10 @@ The tool provides clear error messages for common issues:
 - Sheet name not found
 - Overwrite conflicts
 - Column specification errors
+- Template validation errors (missing sheets, header mismatches, merged cells)
+- Data quality validation errors (duplicates, NULL values, row count mismatches)
 
-Use `--verbose` for detailed error information.
+Use `--verbose` for detailed error information and validation results.
 
 ## License
 
