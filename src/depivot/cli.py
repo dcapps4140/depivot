@@ -194,6 +194,11 @@ console = Console()
     default="[dbo].[Intel_Site_Names]",
     help="Table name for L2_Proj lookup based on Site (default: '[dbo].[Intel_Site_Names]')",
 )
+@click.option(
+    "--no-quality-validation",
+    is_flag=True,
+    help="Skip data quality validation (validation runs by default if configured)",
+)
 @click.version_option(version="0.1.0", prog_name="depivot")
 def main(
     input_path,
@@ -234,6 +239,7 @@ def main(
     sql_table,
     sql_mode,
     sql_l2_lookup_table,
+    no_quality_validation,
 ):
     """Depivot Excel files from wide to long format.
 
@@ -445,6 +451,9 @@ def main(
             "sql_table": sql_table,
             "sql_mode": sql_mode,
             "sql_l2_lookup_table": sql_l2_lookup_table,
+            "validation_rules": config_params.get("validation_rules"),
+            "no_validate_quality": no_quality_validation,
+            "template_validation": config_params.get("template_validation"),
         }
 
         # Save configuration if requested

@@ -35,3 +35,15 @@ class DatabaseError(DepivotError):
     """Error with database operations."""
 
     pass
+
+
+class DataQualityError(DepivotError):
+    """Data quality validation error."""
+
+    pass
+
+
+class TemplateError(DepivotError):
+    """Excel template validation error."""
+
+    pass

@@ -82,6 +82,8 @@ def get_config_params(options: Dict[str, Any]) -> Dict[str, Any]:
         "sql_table",
         "sql_mode",
         "sql_l2_lookup_table",
+        "validation_rules",
+        "template_validation",
     ]
 
     # Default values - don't save if value matches default
@@ -97,6 +99,8 @@ def get_config_params(options: Dict[str, Any]) -> Dict[str, Any]:
         "exclude_totals": False,
         "sql_mode": "append",
         "sql_l2_lookup_table": "[dbo].[Intel_Site_Names]",
+        "validation_rules": None,
+        "template_validation": None,
     }
 
     config = {}

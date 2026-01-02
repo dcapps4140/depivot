@@ -400,6 +400,9 @@ def depivot_file(
     sql_table: Optional[str] = None,
     sql_mode: str = "append",
     sql_l2_lookup_table: str = "[dbo].[Intel_Site_Names]",
+    validation_rules: Optional[Dict] = None,
+    no_validate_quality: bool = False,
+    template_validation: Optional[Dict] = None,
 ) -> Dict[str, int]:
     """Depivot a single Excel file with multi-sheet support.
 
@@ -437,6 +440,17 @@ def depivot_file(
     # Validate output path
     validate_output_path(output_file, overwrite=overwrite)
 
+    # PHASE 1: Template structure validation (fast, openpyxl, no data load)
+    template_validator = None
+    if template_validation:
+        from depivot.template_validators import TemplateValidator
+        template_validator = TemplateValidator(template_validation)
+
+        if verbose:
+            console.print("[cyan]Validating template structure...[/cyan]")
+
+        template_validator.validate_file_structure(input_file)
+
     # Extract or validate release date
     if release_date is None:
         release_date = extract_release_date(input_file.name)
@@ -459,10 +473,25 @@ def depivot_file(
     value_vars_by_sheet = {}  # Track value_vars used for each sheet
     total_rows = 0
 
+    # Initialize data quality validation engine
+    validation_engine = None
+    all_quality_results = {"pre": [], "post": []}
+
+    if not no_validate_quality and validation_rules:
+        from depivot.data_quality import ValidationEngine
+        validation_engine = ValidationEngine(validation_rules)
+
     for sheet_name in sheets_to_process:
         try:
             if verbose:
                 console.print(f"  [yellow]Processing sheet:[/yellow] {sheet_name}")
+
+            # PHASE 2: Template sheet validation (openpyxl, per sheet, before data load)
+            if template_validator:
+                if verbose:
+                    console.print(f"    [cyan]Validating template for {sheet_name}...[/cyan]")
+
+                template_validator.validate_sheet_template(input_file, sheet_name)
 
             # Read sheet
             df = pd.read_excel(input_file, sheet_name=sheet_name, header=header_row)
@@ -485,6 +514,34 @@ def depivot_file(
 
             # Store filtered data for validation
             sheets_data[sheet_name] = df.copy()
+
+            # PHASE 3: Template dataframe validation (pandas, after data load)
+            if template_validator:
+                template_validator.validate_dataframe_template(df, sheet_name)
+
+            # PRE-PROCESSING DATA QUALITY VALIDATION
+            if validation_engine:
+                from depivot.data_quality import ValidationContext
+
+                pre_context = ValidationContext(
+                    df=df,
+                    sheet_name=sheet_name,
+                    input_file=input_file,
+                    id_vars=id_vars if id_vars else [],
+                    value_vars=value_vars if value_vars else [],
+                    var_name=var_name,
+                    value_name=value_name
+                )
+
+                pre_results = validation_engine.run_pre_processing(pre_context)
+                all_quality_results["pre"].extend(pre_results)
+
+                # Report results if verbose
+                if verbose:
+                    validation_engine.report_results(pre_results, f"Pre-{sheet_name}", verbose)
+
+                # Check for errors (raises DataQualityError if any)
+                validation_engine.check_for_errors(pre_results)
 
             # Validate columns exist in this sheet (skip if no id_vars)
             if id_vars:
@@ -533,6 +590,29 @@ def depivot_file(
             depivoted_sheets[sheet_name] = df_long
             total_rows += len(df_long)
 
+            # POST-PROCESSING DATA QUALITY VALIDATION
+            if validation_engine:
+                post_context = ValidationContext(
+                    df_source=df,
+                    df_processed=df_long,
+                    sheet_name=sheet_name,
+                    input_file=input_file,
+                    id_vars=final_id_vars,
+                    value_vars=final_value_vars,
+                    var_name=var_name,
+                    value_name=value_name
+                )
+
+                post_results = validation_engine.run_post_processing(post_context)
+                all_quality_results["post"].extend(post_results)
+
+                # Report results if verbose
+                if verbose:
+                    validation_engine.report_results(post_results, f"Post-{sheet_name}", verbose)
+
+                # Check for errors (raises DataQualityError if any)
+                validation_engine.check_for_errors(post_results)
+
             if verbose:
                 console.print(
                     f"    [green]OK[/green] {len(df)} rows -> {len(df_long)} rows"
@@ -566,6 +646,12 @@ def depivot_file(
             console.print(mismatches.to_string())
         elif verbose:
             console.print("[green]Validation: All totals match![/green]")
+
+    # Report final data quality results summary
+    if validation_engine and all_quality_results:
+        all_results = all_quality_results["pre"] + all_quality_results["post"]
+        if all_results:
+            validation_engine.report_results(all_results, "Overall Summary", verbose)
 
     # Determine output modes
     excel_output = not sql_only
