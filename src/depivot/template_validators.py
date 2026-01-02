@@ -74,18 +74,19 @@ class TemplateValidator:
         except Exception as e:
             raise TemplateError(f"Cannot open Excel file: {e}")
 
-        for check in self.file_structure_checks:
-            if not check.get("enabled", True):
-                continue
+        try:
+            for check in self.file_structure_checks:
+                if not check.get("enabled", True):
+                    continue
 
-            check_type = check.get("check")
+                check_type = check.get("check")
 
-            if check_type == "expected_sheets":
-                self._check_expected_sheets(wb, check)
-            elif check_type == "sheet_count":
-                self._check_sheet_count(wb, check)
-
-        wb.close()
+                if check_type == "expected_sheets":
+                    self._check_expected_sheets(wb, check)
+                elif check_type == "sheet_count":
+                    self._check_sheet_count(wb, check)
+        finally:
+            wb.close()
 
     def validate_sheet_template(self, input_file: Path, sheet_name: str) -> None:
         """
@@ -111,26 +112,26 @@ class TemplateValidator:
         except Exception as e:
             raise TemplateError(f"Cannot open Excel file for sheet validation: {e}")
 
-        if sheet_name not in wb.sheetnames:
+        try:
+            if sheet_name not in wb.sheetnames:
+                return
+
+            ws = wb[sheet_name]
+
+            for check in self.sheet_template_checks:
+                if not check.get("enabled", True):
+                    continue
+
+                check_type = check.get("check")
+
+                if check_type == "header_row":
+                    self._check_header_row(ws, sheet_name, check)
+                elif check_type == "merged_cells":
+                    self._check_merged_cells(ws, sheet_name, check)
+                elif check_type == "cell_formats":
+                    self._check_cell_formats(ws, sheet_name, check)
+        finally:
             wb.close()
-            return
-
-        ws = wb[sheet_name]
-
-        for check in self.sheet_template_checks:
-            if not check.get("enabled", True):
-                continue
-
-            check_type = check.get("check")
-
-            if check_type == "header_row":
-                self._check_header_row(ws, sheet_name, check)
-            elif check_type == "merged_cells":
-                self._check_merged_cells(ws, sheet_name, check)
-            elif check_type == "cell_formats":
-                self._check_cell_formats(ws, sheet_name, check)
-
-        wb.close()
 
     def validate_dataframe_template(self, df: pd.DataFrame, sheet_name: str) -> None:
         """
