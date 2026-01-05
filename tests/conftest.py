@@ -49,6 +49,7 @@ def sample_excel_file(temp_dir, sample_dataframe):
             ws.cell(row=row_idx, column=col_idx, value=value)
 
     wb.save(file_path)
+    wb.close()
     return file_path
 
 
@@ -91,6 +92,7 @@ def excel_file_with_merged_cells(temp_dir):
     ws['E2'] = 110
 
     wb.save(file_path)
+    wb.close()
     return file_path
 
 
@@ -109,6 +111,7 @@ def excel_file_with_wrong_headers(temp_dir):
         ws.cell(row=1, column=col_idx, value=header)
 
     wb.save(file_path)
+    wb.close()
     return file_path
 
 

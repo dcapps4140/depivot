@@ -147,26 +147,29 @@ def get_sheet_names(
     except Exception as e:
         raise FileProcessingError(f"Error reading Excel file {input_file}: {e}")
 
-    # Filter sheets based on options
-    if sheet_names:
-        requested_sheets = parse_column_list(sheet_names)
-        missing_sheets = [s for s in requested_sheets if s not in all_sheets]
-        if missing_sheets:
-            raise SheetError(
-                f"Sheet(s) not found: {', '.join(missing_sheets)}. "
-                f"Available sheets: {', '.join(all_sheets)}"
-            )
-        sheets_to_process = requested_sheets
-    elif skip_sheets:
-        skip_list = parse_column_list(skip_sheets)
-        sheets_to_process = [s for s in all_sheets if s not in skip_list]
-    else:
-        sheets_to_process = all_sheets
+    try:
+        # Filter sheets based on options
+        if sheet_names:
+            requested_sheets = parse_column_list(sheet_names)
+            missing_sheets = [s for s in requested_sheets if s not in all_sheets]
+            if missing_sheets:
+                raise SheetError(
+                    f"Sheet(s) not found: {', '.join(missing_sheets)}. "
+                    f"Available sheets: {', '.join(all_sheets)}"
+                )
+            sheets_to_process = requested_sheets
+        elif skip_sheets:
+            skip_list = parse_column_list(skip_sheets)
+            sheets_to_process = [s for s in all_sheets if s not in skip_list]
+        else:
+            sheets_to_process = all_sheets
 
-    if not sheets_to_process:
-        raise SheetError("No sheets to process after filtering")
+        if not sheets_to_process:
+            raise SheetError("No sheets to process after filtering")
 
-    return sheets_to_process
+        return sheets_to_process
+    finally:
+        xl_file.close()
 
 
 def resolve_columns(
