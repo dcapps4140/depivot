@@ -25,6 +25,10 @@ jobs:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
 
+    - name: Install ODBC drivers (macOS)
+      if: matrix.os == 'macos-latest'
+      run: brew install unixodbc
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
