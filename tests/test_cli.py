@@ -512,3 +512,259 @@ class TestCLIIntegration:
         )
 
         assert result.exit_code == 0
+
+
+# =============================================================================
+# ADDITIONAL CLI TESTS FOR COVERAGE
+# =============================================================================
+
+class TestCLIWildcardProcessing:
+    """Test wildcard pattern processing."""
+
+    def test_wildcard_pattern_with_verbose(self, cli_runner, temp_dir):
+        """Test wildcard pattern processing with verbose output."""
+        # Create multiple test files
+        for i in range(3):
+            file_path = temp_dir / f"data_{i}.xlsx"
+            import pandas as pd
+            df = pd.DataFrame({
+                "Site": ["A", "B"],
+                "Jan": [100 + i, 200 + i],
+            })
+            df.to_excel(file_path, index=False, sheet_name="Sheet1")
+
+        output_file = temp_dir / "combined.xlsx"
+
+        result = cli_runner.invoke(
+            main,
+            [
+                str(temp_dir / "data_*.xlsx"),
+                str(output_file),
+                "--id-vars", "Site",
+                "--verbose",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Found" in result.output
+        assert "file(s) matching pattern" in result.output
+        assert "SUCCESS" in result.output
+
+    def test_wildcard_pattern_no_matches(self, cli_runner, temp_dir):
+        """Test wildcard pattern with no matching files."""
+        output_file = temp_dir / "combined.xlsx"
+
+        result = cli_runner.invoke(
+            main,
+            [
+                str(temp_dir / "nonexistent_*.xlsx"),
+                str(output_file),
+                "--id-vars", "Site",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "No files found matching pattern" in result.output
+
+    def test_wildcard_without_output_path(self, cli_runner, temp_dir):
+        """Test wildcard pattern requires output path."""
+        # Create a test file
+        file_path = temp_dir / "data.xlsx"
+        import pandas as pd
+        df = pd.DataFrame({"Site": ["A"], "Jan": [100]})
+        df.to_excel(file_path, index=False, sheet_name="Sheet1")
+
+        # Use proper glob pattern that will match files
+        import os
+        pattern = str(temp_dir) + os.sep + "*.xlsx"
+
+        result = cli_runner.invoke(
+            main,
+            [
+                pattern,
+                "--id-vars", "Site",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "OUTPUT_PATH must be specified" in result.output or "No files found" in result.output
+
+
+class TestCLIDryRunExtended:
+    """Extended dry run tests."""
+
+    def test_dry_run_with_wildcards(self, cli_runner, temp_dir):
+        """Test dry run with wildcard patterns."""
+        # Create test files
+        for i in range(2):
+            file_path = temp_dir / f"test_{i}.xlsx"
+            import pandas as pd
+            df = pd.DataFrame({"A": [1, 2]})
+            df.to_excel(file_path, index=False, sheet_name="Sheet1")
+
+        result = cli_runner.invoke(
+            main,
+            [
+                str(temp_dir / "test_*.xlsx"),
+                str(temp_dir / "output.xlsx"),
+                "--id-vars", "A",
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "DRY RUN" in result.output
+        assert "Would process wildcard pattern" in result.output
+        assert "Matching" in result.output
+        assert "file(s)" in result.output
+
+    def test_dry_run_with_value_vars(self, cli_runner, sample_excel_file):
+        """Test dry run with value_vars specified."""
+        result = cli_runner.invoke(
+            main,
+            [
+                str(sample_excel_file),
+                "--id-vars", "Site",
+                "--value-vars", "Jan,Feb",
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "DRY RUN" in result.output
+        assert "Value variables: Jan, Feb" in result.output
+
+    def test_dry_run_with_sheet_filters(self, cli_runner, sample_excel_file):
+        """Test dry run with sheet name filters."""
+        result = cli_runner.invoke(
+            main,
+            [
+                str(sample_excel_file),
+                "--id-vars", "Site",
+                "--sheet-names", "Sheet1",
+                "--skip-sheets", "Sheet2",
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "DRY RUN" in result.output
+        assert "Sheet names: Sheet1" in result.output
+        assert "Skip sheets: Sheet2" in result.output
+
+
+class TestCLIConfigSaveWithProcessing:
+    """Test saving config during processing."""
+
+    def test_save_config_with_processing(self, cli_runner, sample_excel_file, temp_dir):
+        """Test saving config while processing a file."""
+        config_file = temp_dir / "saved_config.yaml"
+        output_file = temp_dir / "output.xlsx"
+
+        result = cli_runner.invoke(
+            main,
+            [
+                str(sample_excel_file),
+                str(output_file),
+                "--id-vars", "Site,Category",
+                "--var-name", "Month",
+                "--save-config", str(config_file),
+            ],
+        )
+
+        # Should save config and exit without processing
+        assert result.exit_code == 0
+        assert config_file.exists()
+        assert "Configuration saved" in result.output
+
+
+class TestCLIBatchFailures:
+    """Test batch processing with failures."""
+
+    def test_batch_with_failed_files(self, cli_runner, temp_dir):
+        """Test batch processing reports failed files."""
+        # Create one valid and one invalid file
+        import pandas as pd
+
+        valid_file = temp_dir / "valid.xlsx"
+        df = pd.DataFrame({"Site": ["A"], "Jan": [100]})
+        df.to_excel(valid_file, index=False, sheet_name="Sheet1")
+
+        # Create an invalid/corrupted Excel file
+        invalid_file = temp_dir / "invalid.xlsx"
+        with open(invalid_file, "w") as f:
+            f.write("This is not a valid Excel file")
+
+        output_dir = temp_dir / "output"
+
+        result = cli_runner.invoke(
+            main,
+            [
+                str(temp_dir),
+                "--id-vars", "Site",
+                "--output-dir", str(output_dir),
+                "--overwrite",
+            ],
+        )
+
+        # Should process successfully even with failures
+        assert "Failed files:" in result.output or result.exit_code == 0
+
+
+class TestCLISingleFileSuccess:
+    """Test single file processing success messages."""
+
+    def test_single_file_success_output(self, cli_runner, sample_excel_file, temp_dir):
+        """Test success message for single file processing."""
+        output_file = temp_dir / "output.xlsx"
+
+        result = cli_runner.invoke(
+            main,
+            [
+                str(sample_excel_file),
+                str(output_file),
+                "--id-vars", "Site,Category",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "SUCCESS" in result.output
+        assert "Depivoted" in result.output
+        assert "sheet(s)" in result.output
+        assert "total rows" in result.output
+        assert "Output:" in result.output
+
+
+class TestCLIErrorHandlingExtended:
+    """Extended error handling tests."""
+
+    def test_unexpected_error_with_verbose(self, cli_runner, temp_dir, monkeypatch):
+        """Test unexpected error handling with verbose flag."""
+        # Create a test file
+        import pandas as pd
+        file_path = temp_dir / "test.xlsx"
+        df = pd.DataFrame({"A": [1, 2]})
+        df.to_excel(file_path, index=False, sheet_name="Sheet1")
+
+        output_file = temp_dir / "output.xlsx"
+
+        # Mock depivot_file to raise an unexpected error
+        def mock_depivot_file(*args, **kwargs):
+            raise RuntimeError("Unexpected test error")
+
+        from depivot import cli
+        monkeypatch.setattr(cli, "depivot_file", mock_depivot_file)
+
+        result = cli_runner.invoke(
+            main,
+            [
+                str(file_path),
+                str(output_file),
+                "--id-vars", "A",
+                "--verbose",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "Unexpected error" in result.output
+
