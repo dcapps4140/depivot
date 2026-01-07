@@ -66,3 +66,67 @@ To recreate the sample file:
 ```bash
 python create_sample.py
 ```
+
+## Configuration Files
+
+The `examples/` directory includes ready-to-use YAML configuration files:
+
+### `basic_config.yaml`
+Basic depivoting configuration without SQL upload or validation.
+
+**Usage:**
+```bash
+depivot input.xlsx output.xlsx --config examples/basic_config.yaml
+```
+
+**Includes:**
+- ID columns, variable/value names
+- Sheet processing options
+- Row filtering settings
+- Custom column additions
+
+### `sql_upload_config.yaml`
+Configuration for uploading depivoted data to SQL Server.
+
+**Usage:**
+```bash
+depivot input.xlsx output.xlsx --config examples/sql_upload_config.yaml --both
+```
+
+**Includes:**
+- SQL Server connection settings
+- Target table: `Intel_Project.dbo.FY25_Budget_Actuals_DIBS`
+- Upload mode (append/replace)
+- L2_Proj lookup table configuration
+
+**Important:** Update the connection string with your actual credentials before use!
+
+### `validation_config.yaml`
+Configuration with template and data quality validation enabled.
+
+**Usage:**
+```bash
+depivot input.xlsx output.xlsx --config examples/validation_config.yaml
+```
+
+**Includes:**
+- Template validation (expected headers, column order)
+- Data quality rules (nulls, duplicates, ranges, types)
+- Validation severity levels (error/warning/info)
+- Validation report generation
+
+## Saving Custom Configurations
+
+You can save your command-line options to a config file:
+
+```bash
+depivot input.xlsx output.xlsx \
+  --id-vars "Site,Category" \
+  --var-name "Month" \
+  --value-name "Amount" \
+  --sql-connection-string "Driver={...};" \
+  --sql-table "[dbo].[FY25_Budget_Actuals_DIBS]" \
+  --save-config my_config.yaml
+```
+
+This creates `my_config.yaml` with all your settings for future use.

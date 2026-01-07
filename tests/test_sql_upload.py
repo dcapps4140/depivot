@@ -216,12 +216,14 @@ class TestTransformDataFrameForSQL:
 
         result = transform_dataframe_for_sql(df, l2_mapping, "Month", "Amount")
 
-        assert list(result.columns) == ["L2_Proj", "Site", "Category", "FiscalYear", "Period", "Actuals", "Status"]
+        assert list(result.columns) == ["L2_Proj", "Site", "Category", "FiscalYear", "Period", "Actuals", "Status", "ReleaseDate", "ReportPeriod"]
         assert result["Period"].tolist() == [1, 2]
         assert result["FiscalYear"].tolist() == [2025, 2025]
         assert result["Actuals"].tolist() == [100, 200]
         assert result["Status"].tolist() == ["Actual", "Budget"]
         assert result["L2_Proj"].tolist() == ["L2_A", "L2_B"]
+        assert result["ReleaseDate"].tolist() == ["2025-02", "2025-02"]
+        assert result["ReportPeriod"].tolist() == [2, 2]
 
     def test_transform_missing_required_columns(self):
         """Test error when required columns are missing."""
@@ -342,6 +344,8 @@ class TestUploadToSQLServer:
             "Period": [1],
             "Actuals": [100],
             "Status": ["Actual"],
+            "ReleaseDate": ["2025-03"],
+            "ReportPeriod": [3],
         })
 
         result = upload_to_sql_server(df, "fake_connection", "[dbo].[TestTable]", mode="append")
@@ -371,6 +375,8 @@ class TestUploadToSQLServer:
             "Period": [1],
             "Actuals": [100],
             "Status": ["Actual"],
+            "ReleaseDate": ["2025-03"],
+            "ReportPeriod": [3],
         })
 
         result = upload_to_sql_server(df, "fake_connection", "[dbo].[TestTable]", mode="replace", verbose=True)
@@ -398,6 +404,8 @@ class TestUploadToSQLServer:
             "Period": [1, 2, 3],
             "Actuals": [100, 200, 300],
             "Status": ["Actual", "Budget", "Forecast"],
+            "ReleaseDate": ["2025-03", "2025-03", "2025-03"],
+            "ReportPeriod": [3, 3, 3],
         })
 
         result = upload_to_sql_server(df, "fake_connection", "[dbo].[TestTable]")
@@ -420,6 +428,8 @@ class TestUploadToSQLServer:
             "Period": [1],
             "Actuals": [100],
             "Status": [None],
+            "ReleaseDate": [None],
+            "ReportPeriod": [None],
         })
 
         result = upload_to_sql_server(df, "fake_connection", "[dbo].[TestTable]")
@@ -444,6 +454,8 @@ class TestUploadToSQLServer:
             "Period": [1],
             "Actuals": [100],
             "Status": ["Actual"],
+            "ReleaseDate": ["2025-03"],
+            "ReportPeriod": [3],
         })
 
         with pytest.raises(DatabaseError, match="SQL Server upload failed"):
@@ -506,7 +518,7 @@ class TestIntegration:
 
         sql_df = transform_dataframe_for_sql(df, l2_mapping)
         assert len(sql_df) == 2
-        assert list(sql_df.columns) == ["L2_Proj", "Site", "Category", "FiscalYear", "Period", "Actuals", "Status"]
+        assert list(sql_df.columns) == ["L2_Proj", "Site", "Category", "FiscalYear", "Period", "Actuals", "Status", "ReleaseDate", "ReportPeriod"]
 
         # Step 3: Upload to SQL Server
         result = upload_to_sql_server(sql_df, "fake_connection", "[dbo].[TestTable]")

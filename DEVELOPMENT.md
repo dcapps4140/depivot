@@ -387,7 +387,9 @@ sql_l2_lookup_table: '[dbo].[Intel_Site_Names]'
 | Month (Jan, Feb, Mar) | → | Period (1, 2, 3) | `convert_month_to_period()` |
 | Amount | → | Actuals | Direct copy (renamed) |
 | DataType | → | Status | Direct copy (renamed) |
+| ReleaseDate (2025-02) | → | ReleaseDate (2025-02) | Direct copy (preserved as VARCHAR(20)) |
 | ReleaseDate (2025-02) | → | FiscalYear (2025) | `extract_fiscal_year()` - extract year as int |
+| ReleaseDate (2025-02) | → | ReportPeriod (2) | `extract_report_period()` - extract month as int (1-12) |
 | Site (lookup) | → | L2_Proj | `fetch_l2_proj_mapping()` - lookup from Intel_Site_Names |
 
 **Month to Period Mapping**:
@@ -408,11 +410,11 @@ MONTH_TO_PERIOD = {
 
 **Bulk Insert Implementation**:
 ```python
-# Parameterized INSERT statement
+# Parameterized INSERT statement (9 columns)
 insert_sql = """
     INSERT INTO {table_name}
-    (L2_Proj, Site, Category, FiscalYear, Period, Actuals, Status)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    (L2_Proj, Site, Category, FiscalYear, Period, Actuals, Status, ReleaseDate, ReportPeriod)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 # Bulk insert with executemany() for performance
@@ -439,17 +441,27 @@ conn.commit()
   - Invalid data types
   - Missing required columns
 
-**SQL Server Schema Requirements**:
+**SQL Server Schema Requirements** (9 columns):
 ```sql
+-- Official production table
+-- Table name: Intel_Project.dbo.FY25_Budget_Actuals_DIBS
+-- See sql/create_table.sql for complete schema with indexes
 CREATE TABLE [dbo].[FY25_Budget_Actuals_DIBS] (
-    [PK_IDX] INT IDENTITY(1,1) PRIMARY KEY,
-    [L2_Proj] VARCHAR(50),
-    [Site] VARCHAR(100) NOT NULL,
-    [Category] VARCHAR(100) NOT NULL,
-    [FiscalYear] INT,
-    [Period] INT,
-    [Actuals] FLOAT,
-    [Status] VARCHAR(20)
+    [L2_Proj] VARCHAR(50) NULL,           -- L2 Project code from Intel_Site_Names lookup
+    [Site] VARCHAR(100) NOT NULL,         -- Site code (e.g., 'Fab12', 'D1X')
+    [Category] VARCHAR(100) NOT NULL,     -- Cost category
+    [FiscalYear] INT NULL,                -- Fiscal year (e.g., 2025) - extracted from ReleaseDate
+    [Period] INT NOT NULL,                -- Accounting period (1-12, where 1=Jan, 2=Feb, etc.)
+    [Actuals] DECIMAL(18,2) NOT NULL,     -- Dollar amount (Budget, Actual, or Forecast)
+    [Status] VARCHAR(20) NULL,            -- Data type: 'Actual', 'Budget', or 'Forecast'
+    [ReleaseDate] VARCHAR(20) NULL,       -- Release date in YYYY-MM format (e.g., '2025-03')
+    [ReportPeriod] INT NULL,              -- Period when data was reported (1-12)
+
+    -- Primary key ensures unique combination
+    CONSTRAINT PK_FY25_Budget_Actuals_DIBS PRIMARY KEY CLUSTERED
+    (
+        Site ASC, Category ASC, Period ASC, Status ASC, ReleaseDate ASC
+    )
 )
 
 -- Lookup table

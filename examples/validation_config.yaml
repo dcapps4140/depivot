@@ -1,0 +1,130 @@
+# ============================================================================
+# Configuration with Validation for Depivot
+# ============================================================================
+# This configuration file includes template validation and data quality checks.
+# Save this file and reference it with --config option.
+#
+# Usage:
+#   depivot input.xlsx output.xlsx --config validation_config.yaml
+# ============================================================================
+
+# Required: Depivoting parameters
+id_vars:
+  - "Site"
+  - "Category"
+var_name: "Month"
+value_name: "Amount"
+
+verbose: true
+
+# ============================================================================
+# Template Validation
+# ============================================================================
+# Validates Excel file structure before processing
+
+template_validation:
+  # Expected column headers (order matters)
+  expected_headers:
+    - "Site"
+    - "Category"
+    - "Jan"
+    - "Feb"
+    - "Mar"
+    - "Apr"
+    - "May"
+    - "Jun"
+    - "Jul"
+    - "Aug"
+    - "Sep"
+    - "Oct"
+    - "Nov"
+    - "Dec"
+
+  # Sheets to validate (leave empty to validate all sheets)
+  sheets_to_validate: []
+
+  # Validation strictness
+  allow_extra_columns: true      # Allow columns not in expected_headers
+  allow_missing_columns: false   # Fail if expected columns are missing
+  check_column_order: false      # Enforce exact column order
+
+# ============================================================================
+# Data Quality Validation
+# ============================================================================
+# Runs validation checks on data before and after depivoting
+
+validation_rules:
+  # Rule 1: Check for null values in critical columns
+  check_nulls:
+    enabled: true
+    severity: "error"
+    columns:
+      - "Site"
+      - "Category"
+
+  # Rule 2: Check for duplicate rows
+  check_duplicates:
+    enabled: true
+    severity: "warning"
+    subset:
+      - "Site"
+      - "Category"
+
+  # Rule 3: Check numeric ranges
+  check_numeric_range:
+    enabled: true
+    severity: "warning"
+    columns:
+      - "Amount"
+    min_value: -1000000
+    max_value: 1000000
+
+  # Rule 4: Check for negative values
+  check_negatives:
+    enabled: true
+    severity: "warning"
+    columns:
+      - "Amount"
+    allow_negatives: true
+
+  # Rule 5: Check column types
+  check_column_types:
+    enabled: true
+    severity: "error"
+    expected_types:
+      Site: "object"
+      Category: "object"
+      Amount: "float64"
+
+  # Rule 6: Row count validation
+  check_row_count:
+    enabled: true
+    severity: "warning"
+    min_rows: 1
+    max_rows: 100000
+
+  # Rule 7: Check for zero values
+  check_zero_values:
+    enabled: true
+    severity: "info"
+    columns:
+      - "Amount"
+
+# ============================================================================
+# Validation Behavior
+# ============================================================================
+
+# Stop processing if validation fails
+fail_on_validation_error: true
+
+# Generate validation report sheet in output
+include_validation_report: true
+
+# ============================================================================
+# Notes:
+# ============================================================================
+# Severity levels:
+#   - error: Stop processing if rule fails
+#   - warning: Log warning but continue
+#   - info: Informational message only
+# ============================================================================

@@ -1,0 +1,61 @@
+# ============================================================================
+# SQL Upload Configuration for Depivot
+# ============================================================================
+# This configuration file contains settings for uploading depivoted data
+# to SQL Server. Save this file and reference it with --config option.
+#
+# Usage:
+#   depivot input.xlsx output.xlsx --config sql_upload_config.yaml --both
+# ============================================================================
+
+# Required: SQL Server connection string
+# Replace with your actual server, database, username, and password
+sql_connection_string: "Driver={ODBC Driver 18 for SQL Server};Server=naildc-srv1;Database=Intel_Project;UID=sa;PWD=sqlserver1!;Encrypt=no;TrustServerCertificate=yes"
+
+# Required: Target SQL Server table name
+# This is the official table for FY25 Budget and Actuals data
+sql_table: "Intel_Project.dbo.FY25_Budget_Actuals_DIBS"
+
+# Optional: Insert mode (default: append)
+# Options:
+#   - append: Add rows to existing table
+#   - replace: Truncate table first, then insert (WARNING: Deletes all existing data!)
+sql_mode: "append"
+
+# Optional: L2_Proj lookup table (default shown)
+# This table maps Site codes to L2_Proj codes
+sql_l2_lookup_table: "[dbo].[Intel_Site_Names]"
+
+# ============================================================================
+# Depivoting Parameters
+# ============================================================================
+
+# ID columns (columns that stay as-is, not unpivoted)
+id_vars:
+  - "Site"
+  - "Category"
+
+# Name for the new variable column (created from column headers)
+var_name: "Month"
+
+# Name for the new value column (created from cell values)
+value_name: "Amount"
+
+# ============================================================================
+# Additional Options
+# ============================================================================
+
+# Verbose output for debugging
+verbose: true
+
+# Header row index (0-based, default: 0)
+header_row: 0
+
+# ============================================================================
+# Notes:
+# ============================================================================
+# 1. The ReleaseDate should be in the source Excel file for proper tracking
+# 2. DataType column should contain: 'Actual', 'Budget', or 'Forecast'
+# 3. Month names will be converted to Period numbers (Jan=1, Feb=2, etc.)
+# 4. ReleaseDate format: YYYY-MM (e.g., "2025-03" for March 2025)
+# ============================================================================

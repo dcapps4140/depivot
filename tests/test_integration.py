@@ -79,6 +79,8 @@ class TestSQLUploadIntegration:
             "Period": [1, 2],
             "Actuals": [100.0, 200.0],
             "Status": ["Actual", "Actual"],
+            "ReleaseDate": ["2025-03", "2025-03"],
+            "ReportPeriod": [3, 3],
         })
         mock_upload.return_value = {"rows_uploaded": 2, "rows_failed": 0}
 
@@ -123,6 +125,8 @@ class TestSQLUploadIntegration:
             "Period": [1, 2],
             "Actuals": [100.0, 200.0],
             "Status": ["Actual", "Actual"],
+            "ReleaseDate": ["2025-03", "2025-03"],
+            "ReportPeriod": [3, 3],
         })
         mock_upload.return_value = {"rows_uploaded": 2, "rows_failed": 0}
 
@@ -168,6 +172,8 @@ class TestSQLUploadIntegration:
             "Period": [1],
             "Actuals": [100.0],
             "Status": ["Actual"],
+            "ReleaseDate": ["2025-03"],
+            "ReportPeriod": [3],
         })
         mock_upload.return_value = {"rows_uploaded": 1, "rows_failed": 0}
 
@@ -204,6 +210,8 @@ class TestSQLUploadIntegration:
             "Period": [1],
             "Actuals": [100.0],
             "Status": ["Actual"],
+            "ReleaseDate": ["2025-03"],
+            "ReportPeriod": [3],
         })
         mock_upload.side_effect = Exception("Database connection failed")
 
@@ -276,6 +284,8 @@ class TestSQLUploadBatchIntegration:
             "Period": [1, 2],
             "Actuals": [100.0, 200.0],
             "Status": ["Actual", "Actual"],
+            "ReleaseDate": ["2025-03", "2025-03"],
+            "ReportPeriod": [3, 3],
         })
         mock_upload.return_value = {"rows_uploaded": 2, "rows_failed": 0}
 
@@ -331,6 +341,8 @@ class TestSQLUploadBatchIntegration:
             "Period": [1],
             "Actuals": [100.0],
             "Status": ["Actual"],
+            "ReleaseDate": ["2025-03"],
+            "ReportPeriod": [3],
         })
         mock_upload.return_value = {"rows_uploaded": 1, "rows_failed": 0}
 
@@ -388,6 +400,8 @@ class TestSQLUploadMultiFileIntegration:
             "Period": [1, 2],
             "Actuals": [100.0, 200.0],
             "Status": ["Actual", "Actual"],
+            "ReleaseDate": ["2025-03", "2025-03"],
+            "ReportPeriod": [3, 3],
         })
         mock_upload.return_value = {"rows_uploaded": 2, "rows_failed": 0}
 
@@ -446,6 +460,8 @@ class TestSQLUploadMultiFileIntegration:
             "Period": [1],
             "Actuals": [100.0],
             "Status": ["Actual"],
+            "ReleaseDate": ["2025-03"],
+            "ReportPeriod": [3],
         })
         mock_upload.return_value = {"rows_uploaded": 1, "rows_failed": 0}
 
@@ -500,6 +516,8 @@ class TestSQLUploadMultiFileIntegration:
             "Period": [1],
             "Actuals": [100.0],
             "Status": ["Actual"],
+            "ReleaseDate": ["2025-03"],
+            "ReportPeriod": [3],
         })
         mock_upload.side_effect = Exception("Database connection failed")
 

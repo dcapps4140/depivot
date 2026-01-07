@@ -307,10 +307,11 @@ Upload depivoted data directly to SQL Server with automatic data transformation:
 **Data Transformations:**
 The SQL upload automatically transforms data to match the SQL Server schema:
 - Month names (Jan, Feb, Mar) → Period numbers (1, 2, 3, ..., 12)
-- ReleaseDate (YYYY-MM) → FiscalYear (extract year as integer)
+- ReleaseDate (YYYY-MM) → FiscalYear (extract year as integer) + ReportPeriod (extract month as 1-12)
 - Site → L2_Proj (lookup from Intel_Site_Names table)
 - DataType → Status column
 - Actuals/Forecast classification based on `--forecast-start` parameter
+- ReleaseDate preserved as VARCHAR(20) for tracking which period data was reported in
 
 ```bash
 # Upload to SQL Server only (no Excel file)
@@ -353,18 +354,26 @@ depivot test.xlsx output.xlsx \
 depivot data.xlsx output.xlsx \
   --config sql_config.yaml \
   --both
+
+# See examples/sql_upload_config.yaml for complete SQL upload configuration template
 ```
 
 **SQL Server Schema Requirements:**
 
-The target SQL table should have the following columns:
+The target SQL table should have the following 9 columns:
 - `L2_Proj` (varchar) - Mapped from lookup table
 - `Site` (varchar) - Direct from source data
 - `Category` (varchar) - Direct from source data
-- `FiscalYear` (int) - Extracted from ReleaseDate
-- `Period` (int) - Converted from month name (1-12)
-- `Actuals` (float) - Value column
+- `FiscalYear` (int) - Extracted from ReleaseDate year (e.g., 2025)
+- `Period` (int) - Converted from month name (1-12, where 1=Jan, 2=Feb, etc.)
+- `Actuals` (decimal) - Value column
 - `Status` (varchar) - DataType (Actual/Budget/Forecast)
+- `ReleaseDate` (varchar) - Release date in YYYY-MM format (e.g., "2025-03")
+- `ReportPeriod` (int) - Period when data was reported (1-12, extracted from ReleaseDate month)
+
+**Official Table:**
+- Table name: `Intel_Project.dbo.FY25_Budget_Actuals_DIBS`
+- See `sql/create_table.sql` for complete schema definition with indexes
 
 **Prerequisites:**
 - Install ODBC Driver 18 for SQL Server

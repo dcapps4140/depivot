@@ -1,0 +1,85 @@
+# ============================================================================
+# Basic Configuration for Depivot
+# ============================================================================
+# This configuration file contains common settings for depivoting Excel files.
+# Save this file and reference it with --config option.
+#
+# Usage:
+#   depivot input.xlsx output.xlsx --config basic_config.yaml
+# ============================================================================
+
+# Required: ID columns (columns that stay as-is, not unpivoted)
+id_vars:
+  - "Site"
+  - "Category"
+
+# Required: Name for the new variable column (created from column headers)
+var_name: "Month"
+
+# Required: Name for the new value column (created from cell values)
+value_name: "Amount"
+
+# Optional: Header row index (0-based, default: 0)
+header_row: 0
+
+# Optional: Enable verbose output
+verbose: false
+
+# ============================================================================
+# Sheet Processing Options
+# ============================================================================
+
+# Process specific sheets only (leave commented to process all sheets)
+# sheet_names:
+#   - "Sheet1"
+#   - "Budget"
+
+# Skip specific sheets
+# skip_sheets:
+#   - "Notes"
+#   - "Summary"
+
+# Combine all sheets into one output sheet
+# combine_sheets: true
+
+# Custom output sheet name (when combining)
+# output_sheet_name: "Combined Data"
+
+# ============================================================================
+# Column Selection Options
+# ============================================================================
+
+# Include only specific columns (uncomment to use)
+# include_cols:
+#   - "Jan"
+#   - "Feb"
+#   - "Mar"
+
+# Exclude specific columns (uncomment to use)
+# exclude_cols:
+#   - "Notes"
+#   - "Comments"
+
+# ============================================================================
+# Row Filtering Options
+# ============================================================================
+
+# Exclude rows with summary/total keywords
+exclude_summary_rows: true
+
+# Additional filter keywords (case-insensitive)
+filter_keywords:
+  - "total"
+  - "subtotal"
+  - "sum"
+  - "grand total"
+
+# ============================================================================
+# Additional Data Columns
+# ============================================================================
+
+# Add custom columns to output (uncomment to use)
+# add_columns:
+#   DataType: "Actual"
+#   Source: "Monthly Report"
+#   FiscalYear: 2025

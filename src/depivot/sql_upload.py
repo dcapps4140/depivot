@@ -87,6 +87,35 @@ def extract_fiscal_year(release_date: str) -> int:
         raise ValueError(f"Invalid ReleaseDate format: '{release_date}'. Expected YYYY-MM format.") from e
 
 
+def extract_report_period(release_date: str) -> int:
+    """Extract report period (month) from release date string.
+
+    Args:
+        release_date: Release date in YYYY-MM format (e.g., '2025-02')
+
+    Returns:
+        Report period as integer (1-12, where 1=Jan, 2=Feb, etc.)
+
+    Raises:
+        ValueError: If release_date format is invalid or month is out of range
+    """
+    if pd.isna(release_date):
+        raise ValueError("ReleaseDate is NaN")
+
+    try:
+        # Handle both YYYY-MM and YYYY_MM formats
+        release_str = str(release_date).strip()
+        month_part = release_str.split("-")[1] if "-" in release_str else release_str.split("_")[1]
+        month = int(month_part)
+
+        if not 1 <= month <= 12:
+            raise ValueError(f"Month must be between 1 and 12, got {month}")
+
+        return month
+    except (ValueError, IndexError) as e:
+        raise ValueError(f"Invalid ReleaseDate format: '{release_date}'. Expected YYYY-MM format.") from e
+
+
 def fetch_l2_proj_mapping(
     connection_string: str,
     lookup_table: str = "[dbo].[Intel_Site_Names]",
@@ -156,7 +185,7 @@ def transform_dataframe_for_sql(
 
     Returns:
         Transformed DataFrame with SQL Server columns:
-        [L2_Proj, Site, Category, FiscalYear, Period, Actuals, Status]
+        [L2_Proj, Site, Category, FiscalYear, Period, Actuals, Status, ReleaseDate, ReportPeriod]
 
     Raises:
         ColumnError: If required columns are missing
@@ -190,21 +219,25 @@ def transform_dataframe_for_sql(
             f"Invalid month values in '{var_name}' column: {', '.join(invalid_months)}"
         ) from e
 
-    # Extract FiscalYear from ReleaseDate if available
+    # Extract FiscalYear and ReportPeriod from ReleaseDate if available
     if "ReleaseDate" in sql_df.columns:
         if verbose:
-            console.print("[cyan]Extracting FiscalYear from ReleaseDate...[/cyan]")
+            console.print("[cyan]Extracting FiscalYear and ReportPeriod from ReleaseDate...[/cyan]")
 
         try:
             sql_df["FiscalYear"] = sql_df["ReleaseDate"].apply(extract_fiscal_year)
+            sql_df["ReportPeriod"] = sql_df["ReleaseDate"].apply(extract_report_period)
         except ValueError as e:
             if verbose:
-                console.print(f"[yellow]Warning: {e}. FiscalYear will be NULL.[/yellow]")
+                console.print(f"[yellow]Warning: {e}. FiscalYear and ReportPeriod will be NULL.[/yellow]")
             sql_df["FiscalYear"] = None
+            sql_df["ReportPeriod"] = None
     else:
         if verbose:
-            console.print("[yellow]Warning: No ReleaseDate column. FiscalYear will be NULL.[/yellow]")
+            console.print("[yellow]Warning: No ReleaseDate column. FiscalYear, ReportPeriod, and ReleaseDate will be NULL.[/yellow]")
+        sql_df["ReleaseDate"] = None
         sql_df["FiscalYear"] = None
+        sql_df["ReportPeriod"] = None
 
     # Map Site to L2_Proj
     if verbose:
@@ -232,7 +265,7 @@ def transform_dataframe_for_sql(
         sql_df["Status"] = None
 
     # Select and reorder columns to match SQL Server table
-    final_columns = ["L2_Proj", "Site", "Category", "FiscalYear", "Period", "Actuals", "Status"]
+    final_columns = ["L2_Proj", "Site", "Category", "FiscalYear", "Period", "Actuals", "Status", "ReleaseDate", "ReportPeriod"]
     sql_df = sql_df[final_columns]
 
     return sql_df
@@ -286,7 +319,7 @@ def upload_to_sql_server(
                 console.print(f"[yellow]Warning: Could not truncate table: {e}. Continuing anyway...[/yellow]")
 
         # Prepare parameterized INSERT statement
-        columns = ["L2_Proj", "Site", "Category", "FiscalYear", "Period", "Actuals", "Status"]
+        columns = ["L2_Proj", "Site", "Category", "FiscalYear", "Period", "Actuals", "Status", "ReleaseDate", "ReportPeriod"]
         placeholders = ", ".join(["?"] * len(columns))
         column_list = ", ".join([f"[{col}]" for col in columns])
 
