@@ -3,7 +3,7 @@ import pytest
 import pandas as pd
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-from depivot.core import depivot_file, depivot_batch
+from depivot.core import depivot_file, depivot_batch, depivot_multi_file
 from depivot.exceptions import TemplateError, DataQualityError, FileProcessingError, DatabaseError
 
 
@@ -353,3 +353,163 @@ class TestSQLUploadBatchIntegration:
         # Verify Excel files were created
         output_files = list(output_dir.glob("*.xlsx"))
         assert len(output_files) == 1
+
+
+class TestSQLUploadMultiFileIntegration:
+    """Test SQL upload integration with depivot_multi_file."""
+
+    @patch('depivot.sql_upload.upload_to_sql_server')
+    @patch('depivot.sql_upload.transform_dataframe_for_sql')
+    @patch('depivot.sql_upload.fetch_l2_proj_mapping')
+    def test_depivot_multi_file_sql_only(self, mock_fetch, mock_transform, mock_upload, temp_dir):
+        """Test depivot_multi_file with SQL upload (wildcard processing)."""
+        # Create multiple test input files
+        input_files = []
+        for i in range(2):
+            file_path = temp_dir / f"data_{i}.xlsx"
+            df = pd.DataFrame({
+                "Site": ["Site A", "Site B"],
+                "Category": ["Cat1", "Cat2"],
+                "Jan": [100 + i*10, 200 + i*10],
+                "Feb": [150 + i*10, 250 + i*10],
+            })
+            df.to_excel(file_path, index=False, sheet_name="Sheet1")
+            input_files.append(file_path)
+
+        output_file = temp_dir / "output.xlsx"
+
+        # Mock SQL upload functions
+        mock_fetch.return_value = {"Site A": "L2_A", "Site B": "L2_B"}
+        mock_transform.return_value = pd.DataFrame({
+            "L2_Proj": ["L2_A", "L2_B"],
+            "Site": ["Site A", "Site B"],
+            "Category": ["Cat1", "Cat2"],
+            "FiscalYear": [2025, 2025],
+            "Period": [1, 2],
+            "Actuals": [100.0, 200.0],
+            "Status": ["Actual", "Actual"],
+        })
+        mock_upload.return_value = {"rows_uploaded": 2, "rows_failed": 0}
+
+        result = depivot_multi_file(
+            input_files=input_files,
+            output_file=output_file,
+            id_vars=["Site", "Category"],
+            var_name="Month",
+            value_name="Amount",
+            sql_only=True,
+            sql_connection_string="fake_connection_string",
+            sql_table="[dbo].[TestTable]",
+            sql_mode="append",
+            verbose=True,
+        )
+
+        # Verify SQL functions were called
+        assert mock_fetch.called
+        assert mock_transform.called
+        assert mock_upload.called
+
+        # Verify Excel file was NOT created (sql_only mode)
+        assert not output_file.exists()
+
+        # Verify result contains processing info
+        assert result["sheets_processed"] > 0
+        assert result["total_rows"] > 0
+        assert len(result["input_files"]) == 2
+
+    @patch('depivot.sql_upload.upload_to_sql_server')
+    @patch('depivot.sql_upload.transform_dataframe_for_sql')
+    @patch('depivot.sql_upload.fetch_l2_proj_mapping')
+    def test_depivot_multi_file_both_excel_and_sql(self, mock_fetch, mock_transform, mock_upload, temp_dir):
+        """Test depivot_multi_file with both Excel and SQL output."""
+        # Create multiple test input files
+        input_files = []
+        for i in range(2):
+            file_path = temp_dir / f"data_{i}.xlsx"
+            df = pd.DataFrame({
+                "Site": ["Site A"],
+                "Category": ["Cat1"],
+                "Jan": [100 + i*10],
+            })
+            df.to_excel(file_path, index=False, sheet_name="Sheet1")
+            input_files.append(file_path)
+
+        output_file = temp_dir / "output.xlsx"
+
+        # Mock SQL upload functions
+        mock_fetch.return_value = {"Site A": "L2_A"}
+        mock_transform.return_value = pd.DataFrame({
+            "L2_Proj": ["L2_A"],
+            "Site": ["Site A"],
+            "Category": ["Cat1"],
+            "FiscalYear": [2025],
+            "Period": [1],
+            "Actuals": [100.0],
+            "Status": ["Actual"],
+        })
+        mock_upload.return_value = {"rows_uploaded": 1, "rows_failed": 0}
+
+        result = depivot_multi_file(
+            input_files=input_files,
+            output_file=output_file,
+            id_vars=["Site", "Category"],
+            var_name="Month",
+            value_name="Amount",
+            both=True,
+            sql_connection_string="fake_connection_string",
+            sql_table="[dbo].[TestTable]",
+            sql_mode="replace",
+            verbose=False,
+        )
+
+        # Verify SQL functions were called
+        assert mock_fetch.called
+        assert mock_transform.called
+        assert mock_upload.called
+
+        # Verify Excel file WAS created (both mode)
+        assert output_file.exists()
+
+        # Verify result
+        assert result["sheets_processed"] > 0
+        assert result["total_rows"] > 0
+
+    @patch('depivot.sql_upload.upload_to_sql_server')
+    @patch('depivot.sql_upload.transform_dataframe_for_sql')
+    @patch('depivot.sql_upload.fetch_l2_proj_mapping')
+    def test_depivot_multi_file_sql_error(self, mock_fetch, mock_transform, mock_upload, temp_dir):
+        """Test depivot_multi_file SQL upload error handling."""
+        # Create test input file
+        file_path = temp_dir / "data.xlsx"
+        df = pd.DataFrame({
+            "Site": ["Site A"],
+            "Category": ["Cat1"],
+            "Jan": [100],
+        })
+        df.to_excel(file_path, index=False, sheet_name="Sheet1")
+
+        output_file = temp_dir / "output.xlsx"
+
+        # Mock SQL upload to raise an error
+        mock_fetch.return_value = {"Site A": "L2_A"}
+        mock_transform.return_value = pd.DataFrame({
+            "L2_Proj": ["L2_A"],
+            "Site": ["Site A"],
+            "Category": ["Cat1"],
+            "FiscalYear": [2025],
+            "Period": [1],
+            "Actuals": [100.0],
+            "Status": ["Actual"],
+        })
+        mock_upload.side_effect = Exception("Database connection failed")
+
+        with pytest.raises(DatabaseError, match="SQL upload failed"):
+            depivot_multi_file(
+                input_files=[file_path],
+                output_file=output_file,
+                id_vars=["Site", "Category"],
+                sql_only=True,
+                sql_connection_string="fake_connection_string",
+                sql_table="[dbo].[TestTable]",
+                verbose=False,
+            )
