@@ -59,7 +59,7 @@ depivot/
 │   ├── __init__.py           # Package initialization
 │   ├── __main__.py           # Enable 'python -m depivot'
 │   ├── cli.py                # Click CLI interface - entry point (94% coverage)
-│   ├── core.py               # Core business logic (91% coverage)
+│   ├── core.py               # Core business logic (96% coverage)
 │   ├── config.py             # Configuration file handling (100% coverage)
 │   ├── sql_upload.py         # SQL Server upload functionality (92% coverage)
 │   ├── data_quality.py       # Data quality validation engine (95% coverage)
@@ -68,7 +68,7 @@ depivot/
 │   ├── validators.py         # Input validation functions (100% coverage)
 │   ├── exceptions.py         # Custom exception hierarchy (100% coverage)
 │   └── utils.py              # Helper utilities (100% coverage)
-├── tests/                    # Comprehensive test suite (330 tests, 93% coverage)
+├── tests/                    # Comprehensive test suite (333 tests, 95% coverage)
 │   ├── test_cli.py           # CLI tests (37 tests)
 │   ├── test_core.py          # Core logic tests (57 tests)
 │   ├── test_config.py        # Configuration tests (19 tests)
@@ -78,7 +78,7 @@ depivot/
 │   ├── test_template_validators.py # Template validation tests (41 tests)
 │   ├── test_validators.py    # Input validation tests (23 tests)
 │   ├── test_utils.py         # Utilities tests (36 tests)
-│   ├── test_integration.py   # Integration tests (10 tests)
+│   ├── test_integration.py   # Integration tests (13 tests)
 │   └── conftest.py           # Test fixtures and configuration
 ├── examples/                 # Example files and documentation
 ├── pyproject.toml            # Modern Python project config
@@ -683,9 +683,9 @@ depivot test.xlsx output.xlsx \
   - --no-quality-validation flag for faster processing when needed
 
 ### Phase 10: Comprehensive Test Suite & CI/CD
-- **Automated testing infrastructure**: 330 tests with 93% code coverage
+- **Automated testing infrastructure**: 333 tests with 95% code coverage
   - test_cli.py (37 tests, 94% coverage) - CLI interface and argument parsing
-  - test_core.py (57 tests, 91% coverage) - Core depivoting logic
+  - test_core.py (57 tests, 96% coverage) - Core depivoting logic
   - test_config.py (19 tests, 100% coverage) - Configuration file handling
   - test_sql_upload.py (33 tests, 92% coverage) - SQL Server operations
   - test_data_quality.py (36 tests, 95% coverage) - Data quality engine
@@ -693,7 +693,7 @@ depivot test.xlsx output.xlsx \
   - test_template_validators.py (41 tests, 96% coverage) - Template validation
   - test_validators.py (23 tests, 100% coverage) - Input validation
   - test_utils.py (36 tests, 100% coverage) - Utility functions
-  - test_integration.py (10 tests) - End-to-end workflows
+  - test_integration.py (13 tests) - End-to-end workflows
   - conftest.py with reusable test fixtures
 - **Continuous Integration**: GitHub Actions CI/CD pipeline
   - Multi-platform testing: Ubuntu, Windows, macOS
@@ -730,11 +730,11 @@ depivot test.xlsx output.xlsx \
 
 ### Automated Test Suite
 
-The project has a comprehensive automated test suite with **93% overall code coverage** across **330 tests**:
+The project has a comprehensive automated test suite with **95% overall code coverage** across **333 tests**:
 
 **Test Coverage by Module:**
 - cli.py: 94% (37 tests) - Command-line interface, argument parsing, workflow orchestration
-- core.py: 91% (57 tests) - Core depivoting logic, multi-file processing, validation
+- core.py: 96% (57 tests) - Core depivoting logic, multi-file processing, validation
 - config.py: 100% (19 tests) - Configuration file handling (YAML save/load)
 - sql_upload.py: 92% (33 tests) - SQL Server upload, data transformations, bulk insert
 - data_quality.py: 95% (36 tests) - Data quality validation engine
@@ -743,7 +743,7 @@ The project has a comprehensive automated test suite with **93% overall code cov
 - validators.py: 100% (23 tests) - Input validation functions
 - utils.py: 100% (36 tests) - Helper utilities (file discovery, parsing, date extraction)
 - exceptions.py: 100% - Custom exception hierarchy
-- integration tests: 10 tests - End-to-end workflow validation
+- integration tests: 13 tests - End-to-end workflow validation
 
 **Running Tests:**
 ```bash
@@ -798,7 +798,7 @@ pytest -k "test_depivot_multi_file" -v
 3. ✅ **SQL Server direct upload** - upload depivoted data directly to SQL Server (Phase 8)
 4. ✅ **Data quality validation** - comprehensive pre/post-processing data checks with 10 configurable rules (Phase 9)
 5. ✅ **Excel template validation** - verify input files match expected structure with 3-phase validation approach (Phase 9)
-6. ✅ **Comprehensive test suite** - 330 automated tests with 93% code coverage across all platforms (Phase 10)
+6. ✅ **Comprehensive test suite** - 333 automated tests with 95% code coverage across all platforms (Phase 10)
 7. ✅ **Continuous Integration** - GitHub Actions CI/CD pipeline testing on Ubuntu, Windows, macOS with Python 3.9-3.12
 
 ### Potential Improvements
@@ -837,7 +837,7 @@ For questions about implementation details, contact the development team or refe
 
 ---
 
-**Last Updated**: January 6, 2026
+**Last Updated**: January 7, 2026
 **Version**: 0.1.0
 **Python Version**: 3.9+
-**Test Coverage**: 93% (330 tests)
+**Test Coverage**: 95% (333 tests)

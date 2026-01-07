@@ -601,7 +601,7 @@ depivot/
 │       ├── __init__.py            # Package initialization
 │       ├── __main__.py            # Enable python -m depivot
 │       ├── cli.py                 # Click CLI interface (94% coverage)
-│       ├── core.py                # Core depivoting logic (91% coverage)
+│       ├── core.py                # Core depivoting logic (96% coverage)
 │       ├── config.py              # Configuration file handling (100% coverage)
 │       ├── sql_upload.py          # SQL Server upload functionality (92% coverage)
 │       ├── data_quality.py        # Data quality validation engine (95% coverage)
@@ -610,7 +610,7 @@ depivot/
 │       ├── validators.py          # Input validation (100% coverage)
 │       ├── exceptions.py          # Custom exceptions (100% coverage)
 │       └── utils.py               # Helper utilities (100% coverage)
-├── tests/                         # Comprehensive test suite (330 tests, 93% coverage)
+├── tests/                         # Comprehensive test suite (333 tests, 95% coverage)
 │   ├── test_cli.py                # CLI tests (37 tests)
 │   ├── test_core.py               # Core logic tests (57 tests)
 │   ├── test_config.py             # Configuration tests (19 tests)
@@ -620,7 +620,7 @@ depivot/
 │   ├── test_template_validators.py # Template validation tests (41 tests)
 │   ├── test_validators.py         # Input validation tests (23 tests)
 │   ├── test_utils.py              # Utilities tests (36 tests)
-│   ├── test_integration.py        # Integration tests (10 tests)
+│   ├── test_integration.py        # Integration tests (13 tests)
 │   └── conftest.py                # Test fixtures and configuration
 ├── examples/                      # Example files and documentation
 ├── pyproject.toml                 # Project configuration
@@ -644,7 +644,7 @@ python src/depivot/cli.py --help
 
 ### Testing
 
-The project has a comprehensive test suite with **93% overall code coverage**:
+The project has a comprehensive test suite with **95% overall code coverage**:
 
 ```bash
 # Run all tests
@@ -665,7 +665,7 @@ pytest -k "test_depivot" -v
 
 **Test Coverage by Module:**
 - cli.py: 94% (37 tests)
-- core.py: 91% (57 tests)
+- core.py: 96% (57 tests)
 - config.py: 100% (19 tests)
 - sql_upload.py: 92% (33 tests)
 - data_quality.py: 95% (36 tests)
@@ -675,7 +675,7 @@ pytest -k "test_depivot" -v
 - utils.py: 100% (36 tests)
 - exceptions.py: 100%
 
-**Total:** 330 tests, 93% coverage across all platforms (Ubuntu, Windows, macOS) and Python versions (3.9-3.12)
+**Total:** 333 tests, 95% coverage across all platforms (Ubuntu, Windows, macOS) and Python versions (3.9-3.12)
 
 ## Error Handling
 
