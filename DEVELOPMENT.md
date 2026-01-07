@@ -838,6 +838,6 @@ For questions about implementation details, contact the development team or refe
 ---
 
 **Last Updated**: January 7, 2026
-**Version**: 0.1.0
+**Version**: 0.1.0-rc1
 **Python Version**: 3.9+
 **Test Coverage**: 95% (333 tests)
